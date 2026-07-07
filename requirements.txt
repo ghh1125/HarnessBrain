@@ -1,0 +1,9 @@
+# Classification task (Symptom2Disease, LawBench, USPTO). Python >= 3.11.
+datasets
+litellm<1.82.7
+openai-harmony
+rdkit>=2026.3.1
+tenacity>=8
+tqdm
+pyyaml
+python-dotenv>=1.0

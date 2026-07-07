@@ -1,0 +1,32 @@
+# Environment
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Local tool state
+.claude/
+
+# Data (download separately)
+data/
+data/symptom2disease/
+data/lawbench/
+data/uspto/
+
+# Experiment outputs
+logs/
+results/
+workspace/
+
+# Generated figures and paper assets
+figures/
+
+# Evolved agents (generated during runs)
+src/agents/mem_agent_*.py
+
+# uv / pip
+# uv.lock is committed so dependency versions are pinned for reproducible installs.
+*.egg-info/
+dist/

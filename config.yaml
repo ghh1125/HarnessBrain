@@ -1,0 +1,69 @@
+benchmark:
+  concurrency: 5
+  seeds:
+  - 42
+
+dataset:
+  num_test: 100
+  num_train: 200
+  num_val: 50
+  overrides:
+    LawBench:
+      num_test: 100
+      num_train: 200
+      num_val: 50
+    Symptom2Disease:
+      num_test: 212
+      num_train: 200
+      num_val: 50
+    USPTO:
+      num_test: 100
+      num_train: 50
+      num_val: 30
+
+datasets:
+- Symptom2Disease
+- LawBench
+- USPTO
+
+inner_loop:
+  batch_size: 1
+  eval_interval: 0
+  mode: offline
+  num_epochs: 1
+  seed: 42
+  temperature: 0.0
+
+memory_systems:
+  baselines:
+  - no_memory
+  - fewshot_all
+  proposed: []
+
+memory_config:
+  enabled: true
+  evidence_quality: true
+  memory_efficiency: true
+  search_governance: true
+  candidate_timeout: 1800
+  evidence_settings:
+    min_episodes_for_promote: 3
+    min_score_delta_for_effective: 2.0
+    maturity_threshold: 0.5
+    freshness_lambda: 0.9
+    effect_epsilon: 1.0e-6
+    regression_threshold: -3.0
+    small_validation_penalty: true
+  token_optimization:
+    enabled: true
+    history_budget: true
+    log_context_mode: true
+    plan_code_separation: true
+  warm_up:
+    warm_up_iterations: 2
+    soft_guidance_iterations: 4
+
+# Dataset for terminal bench task (terminal-bench@2.0 or swebench-verified)
+terminal_dataset: terminal-bench@2.0
+
+session_id: run
