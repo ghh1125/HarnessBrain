@@ -12,6 +12,10 @@ __pycache__/
 # Local planning notes
 docs/plans/
 
+# Local tests
+tests/
+test/
+
 # Data (download separately)
 data/
 data/symptom2disease/
