@@ -68,5 +68,38 @@ def proposer_config(config: dict[str, Any] | None = None) -> dict[str, str | Non
     return model_config("PROPOSER", config)
 
 
+def proposer_backend(config: dict[str, Any] | None = None) -> str:
+    env = _merged_env()
+    raw_value = (
+        env.get("PROPOSER_BACKEND")
+        or (config or {}).get("proposer_backend")
+        or "claude_code"
+    )
+    value = str(raw_value).strip().lower().replace("-", "_")
+    aliases = {
+        "claude": "claude_code",
+        "claude_code": "claude_code",
+        "claude_cli": "claude_code",
+        "cli": "claude_code",
+        "api": "api",
+        "litellm": "api",
+        "openai": "api",
+        "openai_compatible": "api",
+    }
+    if value not in aliases:
+        allowed = "claude_code or api"
+        raise ValueError(f"PROPOSER_BACKEND must be {allowed}, got {raw_value!r}")
+    return aliases[value]
+
+
+def claude_code_proposer_model(config: dict[str, Any] | None = None) -> str:
+    env = _merged_env()
+    return str(
+        env.get("PROPOSER_CLAUDE_MODEL")
+        or (config or {}).get("proposer_claude_model")
+        or "claude-opus-4-6"
+    )
+
+
 def classifier_config(config: dict[str, Any] | None = None) -> dict[str, str | None]:
     return model_config("CLASSIFIER", config)

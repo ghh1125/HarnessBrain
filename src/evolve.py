@@ -1,7 +1,7 @@
 """Autonomous evolution loop for memory systems (text classification).
 
 Val-only during evolution (test never exposed).
-Uses the configured OpenAI-compatible proposer model to propose new memory systems.
+Uses the configured proposer backend to propose new memory systems.
 
     python main.py evolve --iterations 20 --fresh
     python main.py evolve --iterations 10 --run-name my-run
@@ -10,6 +10,7 @@ Uses the configured OpenAI-compatible proposer model to propose new memory syste
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -60,10 +61,6 @@ CONFIG_PATH = REPO_ROOT / "config.yaml"
 AGENTS_DIR = EVOLVE_DIR / "agents"
 EVO_WORKSPACE = REPO_ROOT / "workspace" / "evo"
 BASELINE_FILES = {"__init__.py", "no_memory.py", "fewshot_memory.py", "fewshot_all.py"}
-
-# Proposer model. Both the classification and the agent proposers run through the
-# Claude Code CLI (claude_wrapper, subscription auth) with this model.
-PROPOSER_MODEL = "claude-opus-4-6"
 
 # These are updated per-run if --run-name is set
 LOGS_DIR = REPO_ROOT / "logs"
@@ -309,7 +306,7 @@ def _slug(text: str, fallback: str) -> str:
 def _proposer_llm():
     from src.llm import LLM
     from src.model_config import proposer_config
-    cfg = yaml.safe_load(CONFIG_PATH.read_text())
+    cfg = yaml.safe_load(CONFIG_PATH.read_text()) or {}
     model_cfg = proposer_config(cfg)
     return LLM(
         model=model_cfg["model"],
@@ -319,6 +316,31 @@ def _proposer_llm():
         max_tokens=4096,
         max_workers=1,
     )
+
+
+def _proposer_backend(cfg: dict | None = None) -> str:
+    from src.model_config import proposer_backend
+
+    cfg = cfg if cfg is not None else yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    return proposer_backend(cfg)
+
+
+def _proposer_claude_model(cfg: dict | None = None) -> str:
+    from src.model_config import claude_code_proposer_model
+
+    cfg = cfg if cfg is not None else yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    return claude_code_proposer_model(cfg)
+
+
+def _proposer_label(cfg: dict | None = None) -> tuple[str, str]:
+    from src.model_config import proposer_config
+
+    cfg = cfg if cfg is not None else yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    backend = _proposer_backend(cfg)
+    if backend == "api":
+        model_cfg = proposer_config(cfg)
+        return backend, str(model_cfg["model"])
+    return backend, _proposer_claude_model(cfg)
 
 
 def _iter_dir(iteration: int) -> Path:
@@ -861,18 +883,19 @@ def _write_candidate_module(name: str, code: str, iteration: int | None = None) 
     return code
 
 
-def _proposer_cli_complete(prompt, iteration, name, attempt, timeout=2400):
+def _proposer_cli_complete(prompt, iteration, name, attempt, timeout=2400, model=None):
     """Single-turn proposer completion via the Claude Code CLI (subscription auth).
 
     Returns (text, token_usage). Strips ANTHROPIC_API_KEY so the CLI uses
     subscription auth instead of the API, then restores it for downstream eval.
     """
+    model = model or _proposer_claude_model()
     os.environ.pop("CLAUDECODE", None)
     saved_key = os.environ.pop("ANTHROPIC_API_KEY", None)
     try:
         result = claude_wrapper.run(
             prompt=prompt,
-            model=PROPOSER_MODEL,
+            model=model,
             allowed_tools=[],
             cwd=str(EVOLVE_DIR),
             log_dir=str(LOGS_DIR / "claude_sessions"),
@@ -883,19 +906,36 @@ def _proposer_cli_complete(prompt, iteration, name, attempt, timeout=2400):
     finally:
         if saved_key:
             os.environ["ANTHROPIC_API_KEY"] = saved_key
-    return (result.text or ""), (result.token_usage or {})
+    usage = result.token_usage or {}
+    usage.setdefault("model", model)
+    usage.setdefault("usage_source", "claude_code")
+    return (result.text or ""), usage
+
+
+def _proposer_api_complete(llm, prompt):
+    """Single-turn proposer completion through an OpenAI-compatible API."""
+    response = llm(prompt)
+    usage = llm.get_last_usage() or {}
+    usage.setdefault("model", getattr(llm, "model", None))
+    return response, usage
 
 
 def propose_candidates(task_prompt, iteration, timeout=2400):
     """Returns True if candidates were produced (pending_eval.json exists)."""
-    print(f"  {_cyan('Claude Code proposer')} generating candidate modules...", flush=True)
+    _cfg_full = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    backend, proposer_model = _proposer_label(_cfg_full)
+    proposer_source = "API proposer" if backend == "api" else "Claude Code proposer"
+    proposer_llm = _proposer_llm() if backend == "api" else None
+
+    print(f"  {_cyan(proposer_source)} generating candidate modules...", flush=True)
     _write_proposer_log(
         iteration,
         "\n".join(
             [
                 f"# Iteration {iteration} Proposer Log",
                 f"timestamp: {datetime.now().isoformat()}",
-                f"proposer_model: {PROPOSER_MODEL} (Claude Code CLI)",
+                f"proposer_backend: {backend}",
+                f"proposer_model: {proposer_model}",
                 "",
             ]
         ),
@@ -948,7 +988,6 @@ def propose_candidates(task_prompt, iteration, timeout=2400):
 
     _call_index = 0
 
-    _cfg_full = yaml.safe_load(CONFIG_PATH.read_text())
     _tok_opt = _cfg_full.get("memory_config", {}).get("token_optimization", {})
     _tok_opt_enabled = (
         memory_efficiency_enabled() and bool(_tok_opt.get("enabled", False))
@@ -1106,9 +1145,17 @@ def propose_candidates(task_prompt, iteration, timeout=2400):
                 iteration,
                 f"\n## Candidate {index} Attempt {attempt} Prompt\n\n{effective_prompt}\n",
             )
-            response, _usage = _proposer_cli_complete(
-                effective_prompt, iteration, name, attempt, timeout=timeout
-            )
+            if backend == "api":
+                response, _usage = _proposer_api_complete(proposer_llm, effective_prompt)
+            else:
+                response, _usage = _proposer_cli_complete(
+                    effective_prompt,
+                    iteration,
+                    name,
+                    attempt,
+                    timeout=timeout,
+                    model=proposer_model,
+                )
             _call_index += 1
             _write_proposer_usage(
                 _iter_dir(iteration),
@@ -1239,7 +1286,14 @@ def propose_candidates(task_prompt, iteration, timeout=2400):
         "\n## Final Candidates\n\n"
         + json.dumps(candidates, indent=2)
         + f"\n\npending_eval: {PENDING_EVAL}\n"
-        + f"proposer_usage: {json.dumps(llm.get_usage(), indent=2)}\n",
+        + "proposer_usage: "
+        + json.dumps(
+            proposer_llm.get_usage()
+            if proposer_llm is not None
+            else {"backend": backend, "model": proposer_model},
+            indent=2,
+        )
+        + "\n",
     )
     print("  CANDIDATES: " + ", ".join(c["name"] for c in candidates))
     return True
@@ -1567,7 +1621,7 @@ def run_evolve_text(args):
 
     from src.benchmark import get_model_short_name, load_results
     from src.llm import LLM
-    from src.model_config import classifier_config, proposer_config
+    from src.model_config import classifier_config
 
     with open(CONFIG_PATH) as f:
         cfg = yaml.safe_load(f)
@@ -1577,7 +1631,7 @@ def run_evolve_text(args):
     classifier_cfg = classifier_config(cfg)
     classifier_model = args.model or classifier_cfg["model"]
     model_short = get_model_short_name(classifier_model)
-    proposer_cfg = proposer_config(cfg)
+    proposer_backend_name, proposer_model = _proposer_label(cfg)
 
     if args.run_name:
         run_name = args.run_name
@@ -1603,7 +1657,7 @@ def run_evolve_text(args):
     print(
         f"{_ts()} {_bold('Evolution (memory systems)')}  "
         f"run={_cyan(run_name)}  classifier={_cyan(classifier_model)}  "
-        f"proposer={_cyan(proposer_cfg['model'])}  "
+        f"proposer={_cyan(f'{proposer_backend_name}:{proposer_model}')}  "
         f"iters={args.iterations}  datasets={datasets}"
     )
 
@@ -2446,23 +2500,26 @@ def update_evolution_summary_terminal(
                 row["rollout_metrics"] = metrics[name]
             f.write(json.dumps(row) + "\n")
 
-def propose_claude(task_prompt, iteration, timeout=2400):
+def propose_claude(task_prompt, iteration, timeout=2400, model=None):
     """Call Claude Code to propose new agent candidates. Returns True if pending_eval.json exists."""
+    model = model or _proposer_claude_model()
     os.environ.pop("CLAUDECODE", None)
     saved_key = os.environ.pop("ANTHROPIC_API_KEY", None)
-    result = claude_wrapper.run(
-        prompt=task_prompt,
-        model=PROPOSER_MODEL,
-        allowed_tools=PROPOSER_ALLOWED_TOOLS,
-        skills=[str(REPO_ROOT / ".claude" / "skills" / "agent")],
-        cwd=str(REPO_ROOT),
-        log_dir=str(LOGS_DIR / "claude_sessions"),
-        name=f"iter{iteration}",
-        timeout_seconds=timeout,
-        effort="max",
-    )
-    if saved_key:
-        os.environ["ANTHROPIC_API_KEY"] = saved_key
+    try:
+        result = claude_wrapper.run(
+            prompt=task_prompt,
+            model=model,
+            allowed_tools=PROPOSER_ALLOWED_TOOLS,
+            skills=[str(REPO_ROOT / ".claude" / "skills" / "agent")],
+            cwd=str(REPO_ROOT),
+            log_dir=str(LOGS_DIR / "claude_sessions"),
+            name=f"iter{iteration}",
+            timeout_seconds=timeout,
+            effort="max",
+        )
+    finally:
+        if saved_key:
+            os.environ["ANTHROPIC_API_KEY"] = saved_key
     if result.exit_code != 0:
         print(f"  {_red('proposer failed')} exit={result.exit_code}")
         if result.stderr:
@@ -2470,6 +2527,99 @@ def propose_claude(task_prompt, iteration, timeout=2400):
         return False
     result.show()
     return PENDING_EVAL.exists()
+
+
+def _extract_json_payload(text: str) -> dict:
+    for match in re.finditer(r"```json\s*(.*?)```", text, re.DOTALL | re.IGNORECASE):
+        try:
+            payload = json.loads(match.group(1).strip())
+            if isinstance(payload, dict):
+                return payload
+        except json.JSONDecodeError:
+            pass
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _module_name(value: str | None, fallback: str) -> str:
+    name = _slug(value or fallback, fallback)
+    if name[0].isdigit():
+        name = f"agent_{name}"
+    return name
+
+
+def propose_api_agent(task_prompt, iteration, timeout=2400):
+    """Call an API proposer, then write the returned agent file locally."""
+    backend, proposer_model = _proposer_label()
+    assert backend == "api"
+    llm = _proposer_llm()
+    api_prompt = (
+        task_prompt
+        + "\n\n## API proposer output contract\n\n"
+        "You are running through an API and cannot write files or execute tools. "
+        "Return exactly one candidate. Provide one fenced JSON block followed by "
+        "one fenced Python block.\n\n"
+        "The JSON block must contain: name, hypothesis, changes, expected_efficiency.\n"
+        "The Python block must be the complete contents of "
+        "`src/harness_agents/<name>.py`, define class `AgentHarness`, and remain "
+        "importable as `src.harness_agents.<name>:AgentHarness`.\n"
+    )
+    try:
+        response, usage = _proposer_api_complete(llm, api_prompt)
+    except Exception as exc:
+        print(f"  {_red('API proposer failed')}: {exc}")
+        return False
+
+    log_path = LOGS_DIR / "proposer_api_log.txt"
+    log_path.write_text(
+        "\n".join(
+            [
+                f"# Iteration {iteration} API Proposer Log",
+                f"timestamp: {datetime.now().isoformat()}",
+                f"proposer_backend: api",
+                f"proposer_model: {proposer_model}",
+                f"usage: {json.dumps(usage, indent=2)}",
+                "",
+                response,
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _extract_json_payload(response)
+    name = _module_name(payload.get("name"), f"api_agent_i{iteration}_1")
+    code = extract_python_code(response)
+    if "class AgentHarness" not in code:
+        print(f"  {_red('API proposer failed')}: no AgentHarness class in response")
+        return False
+
+    AGENTS_DIR_TERMINAL.mkdir(parents=True, exist_ok=True)
+    candidate_path = AGENTS_DIR_TERMINAL / f"{name}.py"
+    candidate_path.write_text(textwrap.dedent(code).lstrip(), encoding="utf-8")
+
+    candidate = {
+        "name": name,
+        "import_path": f"src.harness_agents.{name}:AgentHarness",
+        "hypothesis": str(payload.get("hypothesis") or "API-generated agent candidate."),
+        "changes": str(payload.get("changes") or ""),
+        "expected_efficiency": str(payload.get("expected_efficiency") or ""),
+    }
+    PENDING_EVAL.write_text(
+        json.dumps({"iteration": iteration, "candidates": [candidate]}, indent=2),
+        encoding="utf-8",
+    )
+    print(f"  CANDIDATES: {name}")
+    return True
 
 def validate_candidate(name, import_path):
     """Import-check a candidate agent. Returns True if valid."""
@@ -2579,6 +2729,8 @@ def fresh_start_terminal():
 
 def run_evolve_terminal(args):
     global JOBS_DIR, LOGS_DIR, PENDING_EVAL, FRONTIER_VAL, EVOLUTION_SUMMARY
+    cfg = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+    proposer_backend_name, proposer_model = _proposer_label(cfg)
 
     if args.run_name:
         run_name = args.run_name
@@ -2599,7 +2751,9 @@ def run_evolve_terminal(args):
 
     n_tasks = N_EVAL_TASKS
     print(
-        f"{_ts()} {_bold('Evolution (KIRA track)')}  run={_cyan(run_name)}  model={_cyan(MODEL)}  iters={args.iterations}  trials={args.trials}  tasks={n_tasks}"
+        f"{_ts()} {_bold('Evolution (KIRA track)')}  run={_cyan(run_name)}  "
+        f"model={_cyan(MODEL)}  proposer={_cyan(f'{proposer_backend_name}:{proposer_model}')}  "
+        f"iters={args.iterations}  trials={args.trials}  tasks={n_tasks}"
     )
 
     # ── Phase 0: Baselines ─────────────────────────────────────
@@ -2763,7 +2917,15 @@ def run_evolve_terminal(args):
                 print(f"  {_dim(f'Phase 2 context skipped: {_ph2_err}')}")
 
         print(f"  {_ts()} {_cyan('proposing')} new candidates...", flush=True)
-        ok = propose_claude(task_prompt, iteration, timeout=args.propose_timeout)
+        if proposer_backend_name == "api":
+            ok = propose_api_agent(task_prompt, iteration, timeout=args.propose_timeout)
+        else:
+            ok = propose_claude(
+                task_prompt,
+                iteration,
+                timeout=args.propose_timeout,
+                model=proposer_model,
+            )
         propose_time = time.time() - propose_start
 
         if not ok:

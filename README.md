@@ -57,7 +57,13 @@ pip install -r requirements.txt -r requirements-terminal.txt
 
 ```bash
 cp .env.example .env        # set CLASSIFIER_* (classification) and HARBOR_MODEL (agent)
-claude                      # log in once — the proposer uses the Claude Code CLI
+claude                      # log in once when PROPOSER_BACKEND=claude_code
+
+# Optional: use an OpenAI-compatible API for proposing instead of Claude Code
+# PROPOSER_BACKEND=api
+# PROPOSER_MODEL=openrouter/anthropic/claude-opus-4-6
+# PROPOSER_API_BASE=https://openrouter.ai/api/v1
+# PROPOSER_API_KEY=...
 ```
 
 ### 3. Run the classification task
