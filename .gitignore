@@ -9,6 +9,9 @@ __pycache__/
 # Local tool state
 .claude/
 
+# Local planning notes
+docs/plans/
+
 # Data (download separately)
 data/
 data/symptom2disease/
