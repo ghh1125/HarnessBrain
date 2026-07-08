@@ -481,7 +481,7 @@ REGEX_SAFETY_RULE = (
 def _candidate_prompt(iteration: int, index: int, task_prompt: str) -> str:
     summary = EVOLUTION_SUMMARY.read_text()[-8000:] if EVOLUTION_SUMMARY.exists() else ""
     frontier = FRONTIER_VAL.read_text()[-4000:] if FRONTIER_VAL.exists() else ""
-    return f"""You are the HarnessBrain proposer. Generate ONE new Python memory-system module.
+    return f"""You are the Rado proposer. Generate ONE new Python memory-system module.
 
 Context:
 {task_prompt}
@@ -569,7 +569,7 @@ def _candidate_prompt_optimized(
             })
 
             rendered_context = _render_reading_context(_ctx)
-            prompt_body = f"""You are the HarnessBrain proposer. Generate ONE new Python memory-system module.
+            prompt_body = f"""You are the Rado proposer. Generate ONE new Python memory-system module.
 
 Context:
 {task_prompt}
@@ -651,7 +651,7 @@ Generate candidate {index} for iteration {iteration}.
             f"Avoid:\n{av_lines or '  (none)'}\n"
         )
 
-    prompt_body = f"""You are the HarnessBrain proposer. Generate ONE new Python memory-system module.
+    prompt_body = f"""You are the Rado proposer. Generate ONE new Python memory-system module.
 
 Context:
 {task_prompt}
@@ -2187,9 +2187,10 @@ DEFAULT_CONCURRENCY = 1
 def _task_outcome_memory_enabled_for_dataset(dataset: str) -> bool:
     return dataset == "terminal-bench@2.0"
 
-os.environ["HARNESSBRAIN_ENABLE_TASK_OUTCOME_MEMORY"] = (
+_TASK_OUTCOME_MEMORY_FLAG = (
     "1" if _task_outcome_memory_enabled_for_dataset(ACTIVE_DATASET) else "0"
 )
+os.environ["RADO_ENABLE_TASK_OUTCOME_MEMORY"] = _TASK_OUTCOME_MEMORY_FLAG
 
 PROPOSER_ALLOWED_TOOLS = [
     "Read",

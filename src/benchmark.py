@@ -115,8 +115,8 @@ async def run_all_jobs(
 ) -> list[tuple[str, bool]]:
     logs_dir.mkdir(parents=True, exist_ok=True)
     sem = asyncio.Semaphore(max(1, concurrency))
-    job_timeout = float(os.environ.get("HARNESSBRAIN_JOB_TIMEOUT", "7200"))
-    max_retries = int(os.environ.get("HARNESSBRAIN_JOB_RETRIES", str(max_retries)))
+    job_timeout = float(os.environ.get("RADO_JOB_TIMEOUT", "7200"))
+    max_retries = int(os.environ.get("RADO_JOB_RETRIES", str(max_retries)))
 
     async def run_one(idx: int, desc: str, cmd: list[str]) -> tuple[str, bool]:
         async with sem:
@@ -596,7 +596,7 @@ async def run_benchmark(
 
 def make_parser() -> argparse.ArgumentParser:
     cfg = load_config()
-    parser = argparse.ArgumentParser(description="HarnessBrain benchmark runner")
+    parser = argparse.ArgumentParser(description="Rado benchmark runner")
     parser.add_argument("--memory", type=str, help="Filter to one memory system")
     parser.add_argument("--dataset", type=str, help="Filter to one dataset")
     parser.add_argument("--model", type=str, help="Filter by model (for --frontier)")

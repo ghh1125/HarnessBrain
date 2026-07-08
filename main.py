@@ -50,7 +50,7 @@ def _add_benchmark_args(p: argparse.ArgumentParser):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="HarnessBrain — memory system evolution",
+        description="Rado — memory system evolution",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="subcommand", required=True)

@@ -926,7 +926,7 @@ class EvolutionOperators:
         try:
             task_outcome_path = self.output_dir / "task_outcomes.json"
             if (
-                os.environ.get("HARNESSBRAIN_ENABLE_TASK_OUTCOME_MEMORY") == "1"
+                os.environ.get("RADO_ENABLE_TASK_OUTCOME_MEMORY") == "1"
                 and task_outcome_path.exists()
             ):
                 from memory.encoding.task_outcome_memory import TaskOutcomeMemory

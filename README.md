@@ -1,4 +1,4 @@
-# HarnessBrain
+# Rado
 
 Automated evolution framework that discovers effective memory systems and agent
 scaffolds for two task families:
@@ -8,7 +8,7 @@ scaffolds for two task families:
 ## Project Structure
 
 ```
-HarnessBrain/
+Rado/
 ├── main.py                    # Entry point: evolve / benchmark (routes by --task)
 ├── run.sh                     # One-command: evolve then show results
 ├── config.yaml                # Datasets, models, concurrency, memory_config
@@ -43,13 +43,13 @@ HarnessBrain/
 
 ```bash
 # classification task
-conda create -n harnessbrain python=3.11 -y
-conda activate harnessbrain
+conda create -n rado python=3.11 -y
+conda activate rado
 pip install -r requirements.txt
 
 # agent task (Terminal-Bench / SWE-bench) — requires Python 3.12 + Docker
-conda create -n harnessbrain-agent python=3.12 -y
-conda activate harnessbrain-agent
+conda create -n rado-agent python=3.12 -y
+conda activate rado-agent
 pip install -r requirements.txt -r requirements-terminal.txt
 ```
 
