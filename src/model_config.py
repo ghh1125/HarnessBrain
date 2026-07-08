@@ -1,4 +1,3 @@
-"""Environment-backed model configuration helpers."""
 
 from __future__ import annotations
 

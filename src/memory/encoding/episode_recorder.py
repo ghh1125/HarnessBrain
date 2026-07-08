@@ -15,12 +15,11 @@ elif __name__.startswith("memory."):
 EVO_DIR = Path(__file__).parent.parent.parent / "workspace" / "evo"
 AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
 
-# Terminal-bench baseline name → filename mapping (empty for text task)
+
 _PARENT_NAME_MAP: dict[str, str] = {}
 
 
 def configure(task: str) -> None:
-    """Switch agent directory and baseline name map for the active task."""
     global AGENTS_DIR, _PARENT_NAME_MAP
     if task == "terminal":
         AGENTS_DIR = Path(__file__).parent.parent.parent / "harness_agents"
@@ -39,13 +38,11 @@ def _resolve_parent_name(name: str) -> str:
 
 
 def _find_agent_file(name: str) -> list[str]:
-    """Return lines of agent file, checking evo/ then agents/ directories."""
     source = get_agent_source(name)
     return source.splitlines(keepends=True) if source else []
 
 
 def get_agent_source(name: str) -> str:
-    """Return agent source, checking evo/ then configured agent directories."""
     resolved = _resolve_parent_name(name)
     for candidate in ([name, resolved] if resolved != name else [name]):
         for d in [EVO_DIR, AGENTS_DIR]:
@@ -84,7 +81,7 @@ class EpisodeRecorder:
         except Exception:
             self._regression_threshold = -3.0
 
-    # Reliability failure types beyond normal regression/bug
+
     _RELIABILITY_STATUSES = {"timeout", "crash", "invalid", "oversized_context"}
 
     def _determine_status(
@@ -155,13 +152,13 @@ class EpisodeRecorder:
             "proposer_reasoning": (candidate_info.get("proposer_output") or "")[:2000],
         }
 
-        # Optional token-optimisation context fields
+
         if candidate_info.get("history_context_mode") is not None:
             episode["history_context_mode"] = candidate_info["history_context_mode"]
         if candidate_info.get("prompt_chars") is not None:
             episode["prompt_chars"] = candidate_info["prompt_chars"]
 
-        # HyperMem reading strategy fields
+
         reading_mode = candidate_info.get("reading_mode")
         if reading_mode is not None and reading_mode != "unknown":
             episode["reading_mode"] = reading_mode
@@ -169,7 +166,7 @@ class EpisodeRecorder:
         if context_chars:
             episode["context_chars"] = context_chars
 
-        # Maturity-aware governance metadata (optional, additive).
+
         for key in (
             "evidence_maturity",
             "governance_mode",

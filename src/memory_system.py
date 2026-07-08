@@ -1,4 +1,3 @@
-"""Abstract interface for memory systems."""
 
 import hashlib
 import json
@@ -14,7 +13,6 @@ except ImportError:
 
 
 def extract_json_field(text: str, field: str, default: str = "") -> str:
-    """Extract a field from JSON anywhere in an LLM response string."""
     try:
         data = json.loads(text)
         if isinstance(data, dict):
@@ -56,18 +54,12 @@ def extract_json_field(text: str, field: str, default: str = "") -> str:
 
 
 class MemorySystem(ABC):
-    """Memory system interface for online and offline learning.
-
-    Args:
-        llm: Callable that takes a prompt string and returns a response string.
-    """
 
     def __init__(self, llm: LLMCallable):
         self._llm = llm
         self._prompt_local = threading.local()
 
     def call_llm(self, prompt: str) -> str:
-        """Call the LLM with a prompt."""
         self._prompt_local.last_prompt_len = len(prompt)
         self._prompt_local.last_prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
         self._prompt_local.last_prompt_text = prompt
@@ -82,32 +74,19 @@ class MemorySystem(ABC):
 
     @abstractmethod
     def predict(self, input: str) -> tuple[str, dict[str, Any]]:
-        """Generate prediction before seeing ground truth. Returns (answer, metadata)."""
         pass
 
     @abstractmethod
     def learn_from_batch(self, batch_results: list[dict[str, Any]]) -> None:
-        """Learn from a batch of evaluation results.
-
-        Each dict in batch_results contains:
-            - input: str
-            - prediction: str
-            - ground_truth: str
-            - was_correct: bool
-            - metadata: dict (optional)
-        """
         pass
 
     def get_context_length(self) -> int:
-        """Return character length of context injected per query."""
         return len(self.get_state())
 
     @abstractmethod
     def get_state(self) -> str:
-        """Return serializable state as a JSON string."""
         pass
 
     @abstractmethod
     def set_state(self, state: str) -> None:
-        """Restore state from JSON string returned by get_state."""
         pass

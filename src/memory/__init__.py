@@ -2,7 +2,6 @@ import sys
 
 
 def _sync_package_aliases() -> None:
-    """Keep `memory.*` and `src.memory.*` as one module tree."""
     current = sys.modules[__name__]
     if __name__ == "src.memory":
         sys.modules["memory"] = current
@@ -25,10 +24,6 @@ _sync_package_aliases()
 
 
 def configure(task: str) -> None:
-    """Configure memory for 'text' (classification) or 'terminal' (Terminal-Bench/SWE-bench).
-
-    Call once at process start before any memory functions are used.
-    """
     from src.memory.encoding import component_evidence
     from src.memory.steering import component_playbook
     from src.memory.encoding import episode_recorder
@@ -41,8 +36,8 @@ def configure(task: str) -> None:
     component_playbook.configure(task)
     episode_recorder.configure(task)
 
-    # If modules with cached component references are already loaded, point them
-    # at the configured component_evidence module.
+
+
     for module_name in (
         "src.memory.steering.reading_strategy",
         "memory.steering.reading_strategy",

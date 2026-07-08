@@ -77,18 +77,15 @@ def module_enabled(module_name: str) -> bool:
 
 
 def memory_enabled() -> bool:
-    """Global on/off switch."""
     return bool(get_memory_config().get("enabled", False))
 
 
 def evidence_quality_enabled() -> bool:
-    """True when the evidence-quality modules are active (component_evidence, evolution_operators, inter_component, direction_cluster, guidance_tracker)."""
     cfg = get_memory_config()
     return bool(cfg.get("enabled", False) and cfg.get("evidence_quality", False))
 
 
 def memory_efficiency_enabled() -> bool:
-    """True when the memory-efficiency modules are active (reading_strategy, component_playbook, token_optimization). Requires evidence_quality."""
     cfg = get_memory_config()
     return bool(
         cfg.get("enabled", False)
@@ -98,7 +95,6 @@ def memory_efficiency_enabled() -> bool:
 
 
 def search_governance_enabled() -> bool:
-    """True when the search-governance modules are active (proposal_plan, constraint_layer)."""
     cfg = get_memory_config()
     return bool(cfg.get("enabled", False) and cfg.get("search_governance", False))
 

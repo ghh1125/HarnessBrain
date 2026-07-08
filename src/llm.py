@@ -1,7 +1,3 @@
-"""LLM abstraction for memory systems.
-
-Thin wrapper around litellm.completion with GPT-OSS harmony parsing.
-"""
 
 import hashlib
 import json
@@ -99,7 +95,6 @@ _HARMONY_ENC = None
 
 
 def _get_harmony_enc():
-    """Lazy-load harmony encoder to avoid import overhead when not using GPT-OSS."""
     global _HARMONY_ENC
     if _HARMONY_ENC is None:
         _HARMONY_ENC = load_harmony_encoding(HarmonyEncodingName.HARMONY_GPT_OSS)
@@ -107,10 +102,6 @@ def _get_harmony_enc():
 
 
 def parse_harmony_response(raw_content: str) -> str:
-    """Parse GPT-OSS harmony format, extracting final channel content.
-
-    Returns the 'final' channel content, or raw content if parsing fails.
-    """
     enc = _get_harmony_enc()
     try:
         tokens = enc.encode(raw_content, allowed_special="all")
@@ -175,13 +166,11 @@ def _extract_content(response: Any) -> str:
 
 
 class LLMCallable(Protocol):
-    """Protocol for LLM call functions."""
 
     def __call__(self, prompt: str) -> str: ...
 
 
 class ProviderLLM:
-    """Thin shim that provides the old provider interface on top of litellm."""
 
     def __init__(
         self,
@@ -428,7 +417,6 @@ class ProviderLLM:
 
 
 class LLM:
-    """LLM caller backed by litellm. Handles caching, batching, retries."""
 
     def __init__(
         self,
@@ -493,7 +481,6 @@ class LLM:
         return self._provider.total_cost
 
     def get_last_usage(self) -> dict[str, Any] | None:
-        """Return usage metadata for the most recent provider call or cache hit."""
         return self._provider.get_last_usage()
 
     def _truncate(self, prompt: str) -> str:
@@ -510,7 +497,6 @@ class LLM:
         return prompt
 
     def __call__(self, prompt: str) -> str:
-        """Single prompt call."""
         prompt = self._truncate(prompt)
 
         results = self._provider.generate(
@@ -526,7 +512,6 @@ class LLM:
         return content
 
     def get_usage(self) -> dict[str, Any]:
-        """Return token usage stats and estimated cost."""
         with self._usage_lock:
             calls = self.total_calls
         provider_calls = self._provider.provider_calls
@@ -557,7 +542,6 @@ class LLM:
         }
 
     def reset_usage(self):
-        """Reset token counters."""
         with self._usage_lock:
             self.total_calls = 0
         self._provider.total_input_tokens = 0
@@ -578,7 +562,6 @@ class LLM:
         self._provider._last_usage = None
 
     def batch(self, prompts: list[str]) -> list[str]:
-        """Parallel batch call. Returns results in same order as prompts."""
         if not prompts:
             return []
 
@@ -603,12 +586,6 @@ def make_local_llm(
     max_tokens: int = 4096,
     max_workers: int = 16,
 ) -> LLM:
-    """Create a local LLM caller against an OpenAI-compatible server.
-
-    Usage:
-        llm = make_local_llm()
-        response = llm("Hello!")
-    """
     return LLM(
         model=model,
         api_base=f"http://{host}:{port}/v1",
@@ -618,12 +595,10 @@ def make_local_llm(
 
 
 def make_stub_llm(response: str = '{"reasoning": "stub", "final_answer": "stub"}'):
-    """Create a stub LLM caller for testing."""
     return lambda prompt: response
 
 
 def call_llm(messages: list, model: str | None = None) -> str:
-    """Thin convenience wrapper for single-shot LLM calls."""
     model = model or os.environ.get("PROPOSER_MODEL", "qwen/qwen3.6-plus")
     api_base = os.environ.get("PROPOSER_API_BASE")
     api_key = os.environ.get("PROPOSER_API_KEY")

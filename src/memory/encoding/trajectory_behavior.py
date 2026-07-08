@@ -1,28 +1,3 @@
-"""trajectory_behavior.py — Rule-based behavior feature extraction from trajectory.json.
-
-Extracts quantitative features from agent trajectories using string matching only
-(no LLM calls). Features describe *what the agent did* before submitting, used to
-attribute prompt_template evidence when newly-passing tasks show verification behavior.
-
-AGENT-ONLY: this module reads agent trajectory.json files, which only exist for the
-terminal/agent task. The text-classification loop never produces trajectories, so the
-producer hook in component_evidence (_record_trajectory_behavior_attribution) is a
-silent no-op there (it requires episode["job_dir"], which only the agent loop sets).
-
-Public API
-----------
-extract_features(traj: dict) -> dict
-    Extract features from a loaded trajectory dict.
-
-extract_features_from_file(path: Path) -> dict | None
-    Load and extract; returns None on any read/parse error.
-
-find_task_trajectory(job_dir: Path, task_name: str) -> Path | None
-    Locate trajectory.json for a task by name prefix inside a job directory.
-
-aggregate_behavior_signal(task_features: dict[str, dict]) -> dict
-    Aggregate per-task features into a single signal dict for attribution.
-"""
 
 from __future__ import annotations
 
@@ -30,16 +5,16 @@ import json
 import sys
 from pathlib import Path
 
-# Keep `memory.encoding.trajectory_behavior` and `src.memory.encoding.trajectory_behavior`
-# as one module object, matching the rest of the package.
+
+
 if __name__.startswith("src.memory."):
     sys.modules[__name__.replace("src.", "", 1)] = sys.modules[__name__]
 elif __name__.startswith("memory."):
     sys.modules[f"src.{__name__}"] = sys.modules[__name__]
 
-# ── Command pattern sets ──────────────────────────────────────────────────────
 
-# Commands that read or verify state (read-only intent)
+
+
 _VERIFY_PATTERNS: tuple[str, ...] = (
     "cat ",
     "head ",
@@ -70,7 +45,7 @@ _VERIFY_PATTERNS: tuple[str, ...] = (
     "printf",
 )
 
-# Commands that write or modify state
+
 _WRITE_PATTERNS: tuple[str, ...] = (
     "cat >",
     "echo >",
@@ -89,7 +64,7 @@ _WRITE_PATTERNS: tuple[str, ...] = (
     "npm install",
 )
 
-# Commands that clean up temporary files
+
 _CLEANUP_PATTERNS: tuple[str, ...] = (
     "rm ",
     "rm -",
@@ -98,27 +73,13 @@ _CLEANUP_PATTERNS: tuple[str, ...] = (
 )
 
 
-# ── Feature extraction ────────────────────────────────────────────────────────
+
 
 def extract_features(traj: dict) -> dict:
-    """Extract quantitative behavior features from a trajectory dict.
-
-    Returns a flat dict with the following keys:
-
-    total_steps             — total step entries in the trajectory
-    total_tool_calls        — total tool calls across all steps
-    task_complete_count     — number of mark_task_complete calls
-    double_submit           — bool: agent submitted more than once
-    first_submit_call_frac  — position of first submit / total calls (0.0–1.0)
-    verify_cmds_pre_submit  — read/check commands in last 5 calls before first submit
-    write_cmds_pre_submit   — write/modify commands in last 5 calls before first submit
-    cleanup_pre_submit      — bool: rm/unlink in last 3 calls before first submit
-    pre_submit_verify_ratio — verify_cmds_pre_submit / cmds in last 5 window
-    """
     steps = traj.get("steps") or []
 
-    # Flatten all tool calls across steps in order
-    all_calls: list[tuple[str, str]] = []  # (function_name, keystrokes)
+
+    all_calls: list[tuple[str, str]] = []
     for step in steps:
         for tc in step.get("tool_calls") or []:
             fn = tc.get("function_name") or ""
@@ -160,7 +121,6 @@ def extract_features(traj: dict) -> dict:
 
 
 def extract_features_from_file(path: Path) -> dict | None:
-    """Load trajectory.json and extract features; returns None on any error."""
     try:
         traj = json.loads(path.read_text(encoding="utf-8"))
         return extract_features(traj)
@@ -169,40 +129,25 @@ def extract_features_from_file(path: Path) -> dict | None:
 
 
 def find_task_trajectory(job_dir: Path, task_name: str) -> Path | None:
-    """Return the trajectory.json path for task_name inside job_dir.
-
-    Task directories are named ``{task_name}__{random_suffix}``, so we glob
-    by prefix.
-    """
     job_dir = Path(job_dir)
     if not job_dir.is_dir():
         return None
     for candidate in job_dir.glob(f"{task_name}__*/agent/trajectory.json"):
         return candidate
-    # Also try without the double-underscore suffix (exact match)
+
     exact = job_dir / task_name / "agent" / "trajectory.json"
     return exact if exact.exists() else None
 
 
-# ── Aggregation ───────────────────────────────────────────────────────────────
 
-# A task is considered to show "verification behavior" if it has at least one
-# verify command before submitting, OR the agent submitted twice (second submit
-# implies the harness prompted a re-check).
+
+
+
+
 _VERIFY_THRESHOLD_PER_TASK = 1
 
 
 def aggregate_behavior_signal(task_features: dict[str, dict]) -> dict:
-    """Aggregate per-task feature dicts into a single behavior signal.
-
-    Returns:
-        tasks_with_verify  — count of tasks showing verification behavior
-        tasks_with_cleanup — count of tasks that cleaned up before submit
-        tasks_double_submit — count of tasks where agent submitted twice
-        mean_verify_ratio  — mean pre_submit_verify_ratio across tasks
-        verify_task_names  — list of task names that showed verify behavior
-        total_tasks        — total tasks analyzed
-    """
     verify_tasks: list[str] = []
     cleanup_count = 0
     double_submit_count = 0

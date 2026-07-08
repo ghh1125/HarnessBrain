@@ -1,11 +1,3 @@
-"""Download and normalize the three text classification datasets.
-
-Output format per dataset:
-  data/<dataset>/train_stream.jsonl
-  data/<dataset>/search_set.jsonl
-  data/<dataset>/test_set.jsonl
-  data/<dataset>/label_space.json
-"""
 
 from __future__ import annotations
 

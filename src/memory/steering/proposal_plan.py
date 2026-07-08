@@ -26,7 +26,7 @@ class ProposalPlanManager:
             return json.loads(self.guidance_path.read_text(encoding="utf-8"))
         return {}
 
-    # ── Public API ────────────────────────────────────────────
+
 
     def generate_plan_prompt(self, iteration: int) -> str:
         guidance = self._load_guidance()
@@ -157,7 +157,6 @@ Rules:
 """
 
     def generate_soft_plan_prompt(self, iteration: int) -> str:
-        """Soft-guidance variant: plan required, multi-component edits allowed if justified."""
         guidance = self._load_guidance()
 
         high_priority = guidance.get("high_priority", [])
@@ -284,7 +283,7 @@ Rules:
 """
 
     def extract_plan_from_output(self, proposer_output: str) -> Optional[dict]:
-        # Try ```json ... ``` block first
+
         match = re.search(r"```json\s*(.*?)\s*```", proposer_output, re.DOTALL)
         if match:
             try:
@@ -294,7 +293,7 @@ Rules:
             except json.JSONDecodeError:
                 pass
 
-        # Try ``` ... ``` block containing a JSON object
+
         match = re.search(r"```\s*(\{.*?\})\s*```", proposer_output, re.DOTALL)
         if match:
             try:
@@ -304,7 +303,7 @@ Rules:
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: locate JSON object with target_component key
+
         match = re.search(
             r'(\{[^{}]*"target_component"[^{}]*\})', proposer_output, re.DOTALL
         )
@@ -416,7 +415,6 @@ Rules:
         candidate_id: str,
         metadata: dict,
     ) -> None:
-        """Append history_context_mode and prompt_chars to an already-saved plan record."""
         plan_path = self.evo_dir / f"iter_{iteration:02d}" / candidate_id / "proposal_plan.json"
         if not plan_path.exists():
             return

@@ -1,4 +1,3 @@
-"""Dataset loading utilities for HarnessBrain text classification tasks."""
 
 from __future__ import annotations
 
@@ -22,7 +21,6 @@ try:
         return _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
 
     def _snap_to_label_space(pred: str, label_space: list[str]) -> str:
-        """Map a predicted SMILES to the most structurally similar label-space entry."""
         best_sim = -1.0
         best_label = pred
         for p_part in pred.split("."):
@@ -49,7 +47,7 @@ except ImportError:
         return pred
 
 
-# data/ lives at project root (one level above src/)
+
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 TASK_DIRS = {

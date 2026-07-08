@@ -1,4 +1,3 @@
-"""Inner Loop: Online and offline training with memory systems."""
 
 import json
 import threading
@@ -11,19 +10,17 @@ from typing import Any
 
 try:
     from .memory_system import MemorySystem
-except ImportError:  # Allows direct script/test imports from this directory.
+except ImportError:
     from memory_system import MemorySystem
 
 
 def _normalize_target(target: Any) -> Any:
-    """Convert list labels to semicolon-joined strings so agents can use them as dict keys or set elements."""
     if isinstance(target, list):
         return "; ".join(str(v) for v in target)
     return target
 
 
 class JSONLLogger:
-    """Append-only JSONL logger. Thread-safe."""
 
     def __init__(
         self, path: str | None = None, checkpoint_steps: set[int] | None = None
@@ -37,7 +34,6 @@ class JSONLLogger:
             self.path.write_text("")
 
     def log(self, type: str, **data):
-        """Write a log entry. All logging goes through this method."""
         if not self.path:
             return
         entry = {"type": type, "t": round(time.time() - self.start_time, 2), **data}
@@ -51,7 +47,6 @@ class JSONLLogger:
 
 
 def _get_eval_kwargs(ex: dict[str, Any]) -> dict[str, Any]:
-    """Extract evaluation kwargs from example, handling raw_input -> input_nums mapping."""
     kwargs = {k: v for k, v in ex.items() if k not in ("input", "target")}
     if "raw_input" in ex:
         kwargs["input_nums"] = ex["raw_input"]
@@ -59,23 +54,12 @@ def _get_eval_kwargs(ex: dict[str, Any]) -> dict[str, Any]:
 
 
 def _unpack_eval_result(raw) -> tuple[bool, dict]:
-    """Normalize evaluator output to (ok, metrics).
-
-    Evaluators return either:
-    - bool: simple correct/incorrect
-    - dict: {"was_correct": bool, "metrics": {...}}
-    """
     if isinstance(raw, dict):
         return raw["was_correct"], raw.get("metrics", {})
     return bool(raw), {}
 
 
 def compute_micro_f1(predictions: list[dict]) -> float:
-    """Compute Micro-F1 from predictions with tp/fp/fn metrics.
-
-    Sums tp/fp/fn across all predictions that have them, computes global F1.
-    Returns 0.0 if no tp/fp/fn data found.
-    """
     total_tp = total_fp = total_fn = 0
     has_data = False
     for p in predictions:
@@ -97,7 +81,6 @@ def compute_micro_f1(predictions: list[dict]) -> float:
 def build_classifier_usage_fields(
     llm_usage: dict[str, Any], avg_context_len: int
 ) -> dict[str, Any]:
-    """Build backward-compatible classifier token fields with source breakdown."""
     summary = {
         "provider": {
             "prompt_tokens": int(llm_usage.get("provider_prompt_tokens") or 0),
@@ -144,14 +127,13 @@ def build_classifier_usage_fields(
 
 
 def make_result(preds: list[dict]) -> dict:
-    """Build result dict from predictions, including micro_f1/avg_f1 when available."""
     correct = sum(1 for p in preds if p["was_correct"])
     result = {
         "accuracy": correct / len(preds) if preds else 0.0,
         "correct": correct,
         "total": len(preds),
     }
-    # Compute rich metrics if any prediction has them
+
     f1_values = [
         p["metrics"]["f1"] for p in preds if p.get("metrics", {}).get("f1") is not None
     ]
@@ -177,41 +159,31 @@ def _run_offline_loop(
     val_examples: list[dict[str, Any]] | None = None,
     skip_train_eval: bool = False,
 ) -> dict[str, Any]:
-    """Run offline training: train with ground truth visible, then evaluate.
-
-    In offline mode:
-    1. Train phase: batch examples → learn_from_batch, multiple epochs
-    2. If val_examples provided: eval on val after each epoch, keep best checkpoint
-    3. Eval phase: predict on all examples to measure final accuracy (no updates)
-       (skipped when skip_train_eval=True, e.g. val-only evolve runs)
-
-    Returns accuracy measured AFTER training (not during).
-    """
     trajectory = [] if collect_trajectory else None
     total_steps = num_epochs * len(examples)
 
-    # Early stopping state
+
     best_val_acc = -1.0
     best_state = None
     best_epoch = 0
 
-    # Training phase: batch-based learning with ground truth visible
+
     step = 0
     for epoch in range(num_epochs):
         for batch_start in range(0, len(examples), batch_size):
             batch = examples[batch_start : batch_start + batch_size]
 
-            # Create batch_results with ground truth as "prediction"
+
             batch_results = []
             for ex in batch:
                 _tgt = _normalize_target(ex["target"])
                 r = {
                     "input": ex["input"],
-                    "prediction": _tgt,  # Ground truth visible
+                    "prediction": _tgt,
                     "ground_truth": _tgt,
                     "was_correct": True,
                 }
-                # Forward extra fields (e.g. raw_question) for memory systems
+
                 for k, v in ex.items():
                     if k not in ("input", "target") and k not in r:
                         r[k] = v
@@ -234,7 +206,7 @@ def _run_offline_loop(
 
             step += len(batch)
 
-        # Val eval after each epoch for early stopping
+
         if val_examples:
             val_result = evaluate_memory(
                 memory, val_examples, check_answer, max_workers
@@ -257,7 +229,7 @@ def _run_offline_loop(
                 best_state = memory.get_state()
                 best_epoch = epoch
 
-    # Restore best checkpoint if we did early stopping
+
     if best_state is not None and best_epoch < num_epochs - 1:
         print(
             f"  early stopping: restoring epoch {best_epoch} (val={best_val_acc:.1%})",
@@ -269,8 +241,8 @@ def _run_offline_loop(
                 "early_stop", best_epoch=best_epoch, best_val_acc=round(best_val_acc, 4)
             )
 
-    # Evaluation phase: predict on all examples (no updates)
-    # Skip when skip_train_eval=True (val-only mode — saves ~15 min per system)
+
+
     if skip_train_eval:
         return {
             "accuracy": 0.0,
@@ -347,24 +319,6 @@ def run_inner_loop(
     val_examples: list[dict[str, Any]] | None = None,
     skip_train_eval: bool = False,
 ) -> dict[str, Any]:
-    """Run training with memory system.
-
-    Args:
-        memory: Memory system to train. Must have thread-safe predict() if batch_size > 1.
-        examples: List of examples with {input, target} (and optional raw_input)
-        check_answer: Function (prediction, target, **kwargs) -> bool
-        batch_size: Number of examples to predict before updating (1=fully online)
-        max_workers: Max parallel workers for batch predictions
-        logger: JSONLLogger for structured logging
-        step_offset: Starting step number (for chunked training)
-        collect_trajectory: Whether to collect full trajectory (disable for memory efficiency)
-        mode: "online" or "offline"
-            - online: predict first, then update with feedback (single pass)
-            - offline: train with ground truth visible, can run multiple epochs
-        num_epochs: Number of epochs for offline mode (ignored in online mode)
-        val_examples: Validation examples for early stopping in offline mode
-        skip_train_eval: Skip final train eval in offline mode (val-only evolve runs)
-    """
     if mode == "offline":
         return _run_offline_loop(
             memory=memory,
@@ -379,7 +333,7 @@ def run_inner_loop(
             val_examples=val_examples,
             skip_train_eval=skip_train_eval,
         )
-    # Online mode (default): predict batch → learn from batch
+
     correct = 0
     trajectory = [] if collect_trajectory else None
 
@@ -392,7 +346,7 @@ def run_inner_loop(
     for batch_start in range(0, len(examples), batch_size):
         batch = examples[batch_start : batch_start + batch_size]
 
-        # PHASE 1: PREDICT (parallel within batch)
+
         if batch_size == 1:
             pred_results = [predict_one(0, batch[0])]
         else:
@@ -405,7 +359,7 @@ def run_inner_loop(
                     pred_results.append(future.result())
             pred_results.sort(key=lambda x: x[0])
 
-        # Build batch_results for learn_from_batch
+
         batch_results = []
         for idx, ex, pred, meta, prompt_info, _predict_s in pred_results:
             global_idx = step_offset + batch_start + idx
@@ -423,13 +377,13 @@ def run_inner_loop(
             }
             if metrics:
                 result["metrics"] = metrics
-            # Forward extra fields (e.g. raw_question) for memory systems
+
             for k, v in ex.items():
                 if k not in ("input", "target") and k not in result:
                     result[k] = v
             batch_results.append(result)
 
-            # Log individual step
+
             if logger:
                 logger.log(
                     "step",
@@ -455,7 +409,7 @@ def run_inner_loop(
                     }
                 )
 
-        # PHASE 2: LEARN FROM BATCH
+
         t0 = time.time()
         memory.learn_from_batch(batch_results)
         learn_ms = int((time.time() - t0) * 1000)
@@ -486,7 +440,6 @@ def evaluate_memory(
     check_answer: Callable[..., bool],
     max_workers: int = 32,
 ) -> dict[str, Any]:
-    """Evaluate without updating (parallel)."""
     if not examples:
         return {
             "accuracy": 0.0,
@@ -501,7 +454,7 @@ def evaluate_memory(
         prompt_info = memory.get_last_prompt_info()
         prompt_len = prompt_info.get("prompt_len") or 0
         prompt_text = prompt_info.get("prompt_text") or ""
-        # Injected context = full prompt - test input (remainder is template + memory context)
+
         context_len = max(0, prompt_len - len(ex["input"])) if prompt_len else 0
         raw = check_answer(pred, ex["target"], **_get_eval_kwargs(ex))
         ok, metrics = _unpack_eval_result(raw)
@@ -537,17 +490,10 @@ def evaluate_memory(
 
 
 def load_memory_system(path: str, llm) -> MemorySystem:
-    """Load a memory system from a file path.
-
-    Accepts paths like:
-    - 'agents/no_memory.py'
-    - 'agents/my_candidate.py'
-    - 'no_memory' (searches built-in and generated agents)
-    """
     import importlib
     import inspect
 
-    # Handle short names (without directory)
+
     if "/" not in path and not path.endswith(".py"):
         try:
             return load_memory_system(f"agents/{path}.py", llm)
@@ -565,7 +511,6 @@ def load_memory_system(path: str, llm) -> MemorySystem:
 
 
 def load_config() -> dict:
-    """Load config from config.yaml."""
     import yaml
 
     config_path = Path(__file__).parent.parent / "config.yaml"
@@ -579,7 +524,7 @@ if __name__ == "__main__":
     from .data import ALL_TASKS, load_dataset_splits, load_dataset_splits_3way
     from .model_config import classifier_config
 
-    # Load config from YAML
+
     cfg = load_config()
 
     parser = argparse.ArgumentParser(description="Run inner loop with memory system")
@@ -617,7 +562,7 @@ if __name__ == "__main__":
         default=None,
         help="LLM temperature (overrides model default)",
     )
-    # New output args: split val/test into separate files
+
     parser.add_argument(
         "--save-memory",
         default=None,
@@ -638,7 +583,7 @@ if __name__ == "__main__":
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    # Skip if all requested outputs already exist
+
     outputs_to_check = [p for p in [args.val_output, args.test_output] if p]
     if (
         outputs_to_check
@@ -648,7 +593,7 @@ if __name__ == "__main__":
         print(f"Already complete, skipping: {outputs_to_check}")
         exit(0)
 
-    # Resolve dataset sizes: CLI args > per-dataset overrides > defaults
+
     ds = cfg["dataset"]
     ds_overrides = ds.get("overrides", {}).get(args.dataset, {})
     num_train = (
@@ -729,13 +674,13 @@ if __name__ == "__main__":
     run_start = time.time()
 
     if args.load_memory:
-        # Skip training — load saved memory state
+
         state = Path(args.load_memory).read_text()
         memory.set_state(state)
         print(f"Loaded memory state from {args.load_memory}", flush=True)
         train_acc = 0.0
     else:
-        # Training loop
+
         mode_str = f"mode={args.mode}" + (
             f" epochs={args.num_epochs}" if args.mode == "offline" else ""
         )
@@ -782,13 +727,13 @@ if __name__ == "__main__":
 
         train_acc = train_correct / len(train_examples) if train_examples else 0.0
 
-        # Save memory state after training
+
         if args.save_memory:
             Path(args.save_memory).parent.mkdir(parents=True, exist_ok=True)
             Path(args.save_memory).write_text(memory.get_state())
             print(f"Saved memory state to {args.save_memory}", flush=True)
 
-    # Eval: only run what's requested
+
     val_preds = []
     test_preds = []
     avg_context_len = 0
@@ -829,7 +774,7 @@ if __name__ == "__main__":
         **classifier_usage_fields,
     )
 
-    # Print summary
+
     summary = f"Done: train={train_acc:.0%}"
     if val_acc is not None:
         summary += f" val={val_acc:.0%}"
@@ -838,7 +783,7 @@ if __name__ == "__main__":
     summary += f" time={runtime:.1f}s"
     print(summary, flush=True)
 
-    # Build common metadata for output JSON
+
     def _build_output(result_dict: dict) -> dict:
         return {
             "accuracy": result_dict["accuracy"],

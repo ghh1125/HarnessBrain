@@ -1,9 +1,3 @@
-"""
-TerminusKira - A native tool-use variant of Terminus2.
-
-This agent inherits from harbor's Terminus2 and replaces the ICL (In-Context Learning)
-JSON/XML parsing approach with native tool calling via the `tools` parameter in LLM API calls.
-"""
 
 import asyncio
 import json
@@ -49,18 +43,16 @@ from tenacity import (
 
 
 class BlockError(Exception):
-    """Raised when infrastructure API call blocks for too long."""
 
     pass
 
 
-BLOCK_TIMEOUT_SEC = 600  # 10 minutes
-_MARKER_PREFIX = "__CMDEND__"  # Marker prefix for command completion detection
+BLOCK_TIMEOUT_SEC = 600
+_MARKER_PREFIX = "__CMDEND__"
 
 
 @dataclass
 class ToolCallResponse:
-    """Extended response that includes tool calls."""
 
     content: str | None
     tool_calls: list[dict[str, Any]]
@@ -70,13 +62,12 @@ class ToolCallResponse:
 
 @dataclass
 class ImageReadRequest:
-    """Request to read and analyze an image file."""
 
     file_path: str
     image_read_instruction: str
 
 
-# Tool description strings
+
 _EXECUTE_COMMANDS_DESC = (
     "Call this to execute commands in the terminal with your analysis and plan."
 )
@@ -137,7 +128,7 @@ _IMAGE_READ_INSTRUCTION_DESC = (
     "Be specific about what information to extract."
 )
 
-# Tool definitions for native tool use
+
 TOOLS = [
     {
         "type": "function",
@@ -215,11 +206,6 @@ TOOLS = [
 
 
 class AgentHarness(Terminus2):
-    """
-    TerminusKira extends harbor's Terminus2 with native tool calling.
-
-    Instead of prompting the model to output JSON/XML and parsing it, TerminusKira uses the `tools` parameter in LLM API calls for structured outputs.
-    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -227,7 +213,6 @@ class AgentHarness(Terminus2):
         self._total_time_saved = 0.0
 
     async def _with_block_timeout(self, coro, timeout_sec: int = BLOCK_TIMEOUT_SEC):
-        """Wrap coroutine with block detection timeout."""
         try:
             return await asyncio.wait_for(coro, timeout=timeout_sec)
         except asyncio.TimeoutError:
@@ -238,31 +223,25 @@ class AgentHarness(Terminus2):
         commands: list[Command],
         session: TmuxSession,
     ) -> tuple[bool, str]:
-        """Execute commands with marker-based polling for early completion detection.
-
-        Sends a unique echo marker after each command. If the marker appears in
-        the output before duration_sec, we move on immediately instead of waiting
-        for the full duration. This reduces unnecessary wait time for fast commands.
-        """
         for command in commands:
             self._marker_seq += 1
             marker = f"{_MARKER_PREFIX}{self._marker_seq}__"
             start = time.monotonic()
 
-            # Send the command
+
             await session.send_keys(
                 command.keystrokes,
                 block=False,
                 min_timeout_sec=0.0,
             )
-            # Send marker: will execute when shell returns after command
+
             await session.send_keys(
                 f"echo '{marker}'\n",
                 block=False,
                 min_timeout_sec=0.0,
             )
 
-            # Poll for marker, exit early if found before duration
+
             await asyncio.sleep(min(0.3, command.duration_sec))
             while time.monotonic() - start < command.duration_sec:
                 pane_content = await session.capture_pane()
@@ -279,7 +258,7 @@ class AgentHarness(Terminus2):
                     f"cmd={command.keystrokes!r}"
                 )
 
-        # Filter out marker lines from output so LLM sees clean output
+
         output = await session.get_incremental_output()
         markers = {f"{_MARKER_PREFIX}{seq}__" for seq in range(1, self._marker_seq + 1)}
         lines = output.split("\n")
@@ -297,24 +276,19 @@ class AgentHarness(Terminus2):
     async def run(
         self, instruction: str, environment: BaseEnvironment, context: AgentContext
     ) -> None:
-        """Run the agent, storing the original instruction for later use."""
         self._original_instruction = instruction
         await super().run(instruction, environment, context)
 
     def _get_parser(self):
-        """Return None since we use native tool calling instead of parsing."""
         return None
 
     def _get_prompt_template_path(self) -> Path:
-        """Return the path to the prompt template for native tool use."""
         return Path(__file__).parent.parent / "prompt-templates" / "terminus-kira.txt"
 
     def _get_error_response_type(self) -> str:
-        """Return error response type for native tool use."""
         return "response with valid tool calls"
 
     def _get_completion_confirmation_message(self, terminal_output: str) -> str:
-        """Return task completion confirmation message for native tool use."""
         instruction = getattr(self, "_original_instruction", "N/A")
         return (
             f"Original task:\n{instruction}\n\n"
@@ -334,7 +308,6 @@ class AgentHarness(Terminus2):
         return super()._limit_output_length(output, max_bytes)
 
     def _extract_tool_calls(self, response) -> list[dict[str, Any]]:
-        """Extract tool calls from litellm response."""
         tool_calls = []
         try:
             message = response.choices[0].message
@@ -355,7 +328,6 @@ class AgentHarness(Terminus2):
         return tool_calls
 
     def _extract_usage_info(self, response) -> UsageInfo | None:
-        """Extract usage info from litellm response."""
         try:
             usage = response.usage
             if usage:
@@ -377,11 +349,6 @@ class AgentHarness(Terminus2):
     def _parse_tool_calls(
         self, tool_calls: list[dict[str, Any]]
     ) -> tuple[list[Command], bool, str, str, str, ImageReadRequest | None]:
-        """Parse tool calls into commands.
-
-        Returns:
-            Tuple of (commands, is_task_complete, feedback, analysis, plan, image_read)
-        """
         commands = []
         is_task_complete = False
         feedback = ""
@@ -410,11 +377,11 @@ class AgentHarness(Terminus2):
                 continue
 
             if function_name == "execute_commands":
-                # Extract analysis and plan
+
                 analysis = arguments.get("analysis", "")
                 plan = arguments.get("plan", "")
 
-                # Extract commands array (Haiku sometimes double-encodes as a JSON string)
+
                 cmds = arguments.get("commands", [])
                 if isinstance(cmds, str):
                     try:
@@ -431,10 +398,10 @@ class AgentHarness(Terminus2):
                         )
                     )
             elif function_name == "task_complete":
-                # Mark task as complete
+
                 is_task_complete = True
             elif function_name == "image_read":
-                # Extract image read request
+
                 file_path = arguments.get("file_path", "")
                 instruction = arguments.get("image_read_instruction", "")
                 if file_path and instruction:
@@ -448,7 +415,7 @@ class AgentHarness(Terminus2):
                         "image_read_instruction arguments."
                     )
             else:
-                # Unknown function name - provide feedback
+
                 feedback = (
                     f"WARNINGS: Unknown function '{function_name}'. "
                     "Please use execute_commands, task_complete, or image_read."
@@ -481,21 +448,16 @@ class AgentHarness(Terminus2):
         temperature: float,
         max_tokens: int,
     ) -> object:
-        """Call litellm.acompletion with retry for transient errors.
-
-        Retries on rate limit, network, and server errors.
-        Does NOT retry on BadRequestError (e.g. image too large).
-        """
         kwargs = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "timeout": 900,  # 15 minutes timeout, retry on timeout
+            "timeout": 900,
             "drop_params": True,
         }
-        # Image analysis doesn't need high reasoning effort
-        # Skip reasoning_effort to use default (faster response)
+
+
         return await litellm.acompletion(**kwargs)
 
     async def _execute_image_read(
@@ -504,17 +466,12 @@ class AgentHarness(Terminus2):
         chat: Chat,
         original_instruction: str = "",
     ) -> str:
-        """Execute a file read command to analyze an image file.
-
-        Reads the file from the container via base64, sends it as a multimodal
-        message to the LLM, and returns the analysis result.
-        """
         if self._session is None:
             raise RuntimeError("Session is not set")
 
         file_path = image_read.file_path
 
-        # Read image from container as base64 via harbor environment exec
+
         result = await self._with_block_timeout(
             self._session.environment.exec(command=f"base64 {file_path}")
         )
@@ -524,7 +481,7 @@ class AgentHarness(Terminus2):
 
         b64 = (result.stdout or "").replace("\n", "")
 
-        # Determine MIME type from file extension
+
         ext = Path(file_path).suffix.lower()
         mime_map = {
             ".png": "image/png",
@@ -541,7 +498,7 @@ class AgentHarness(Terminus2):
                 f"then use `image_read` on the PNG file."
             )
 
-        # Construct multimodal user message
+
         multimodal_messages = [
             {
                 "role": "user",
@@ -557,7 +514,7 @@ class AgentHarness(Terminus2):
 
         messages = add_anthropic_caching(multimodal_messages, self._model_name)
 
-        # Call LLM with retry logic
+
         try:
             response = await self._call_llm_for_image(
                 messages=messages,
@@ -570,7 +527,7 @@ class AgentHarness(Terminus2):
 
         response_text = response["choices"][0]["message"]["content"]
 
-        # Manually update token counts from litellm response
+
         usage = response.get("usage", {})
         if usage:
             chat._cumulative_input_tokens += usage.get("prompt_tokens", 0)
@@ -604,29 +561,25 @@ class AgentHarness(Terminus2):
         self,
         messages: list[dict],
     ) -> ToolCallResponse:
-        """Call LLM directly with tools parameter.
 
-        This bypasses harbor's Chat class to get access to tool_calls.
-        """
-        # Apply Anthropic caching
         messages = add_anthropic_caching(messages, self._model_name)
 
-        # Build completion kwargs
+
         completion_kwargs = {
             "model": self._model_name,
             "messages": messages,
             "temperature": self._temperature,
             "tools": TOOLS,
-            "timeout": 900,  # 15 minutes timeout, retry on timeout
+            "timeout": 900,
             "drop_params": True,
         }
 
-        # Add api_base if available
+
         if hasattr(self._llm, "_api_base") and self._llm._api_base:
             completion_kwargs["api_base"] = self._llm._api_base
 
-        # Add reasoning effort if available
-        # When reasoning_effort is set, temperature MUST be 1 (API requirement)
+
+
         if self._reasoning_effort:
             completion_kwargs["reasoning_effort"] = self._reasoning_effort
             completion_kwargs["temperature"] = 1
@@ -636,13 +589,13 @@ class AgentHarness(Terminus2):
         except LiteLLMContextWindowExceededError:
             raise ContextLengthExceededError()
 
-        # Extract response data
+
         message = response.choices[0].message
         content = message.content or ""
         tool_calls = self._extract_tool_calls(response)
         usage_info = self._extract_usage_info(response)
 
-        # Check for truncation
+
         finish_reason = response.choices[0].finish_reason
         if finish_reason == "length":
             raise OutputLengthExceededError(
@@ -650,7 +603,7 @@ class AgentHarness(Terminus2):
                 truncated_response=content,
             )
 
-        # Extract reasoning content (for models that support it)
+
         reasoning_content = None
         if hasattr(message, "reasoning_content"):
             reasoning_content = message.reasoning_content
@@ -672,17 +625,12 @@ class AgentHarness(Terminus2):
     ) -> tuple[
         list[Command], bool, str, str, str, LLMResponse, ImageReadRequest | None
     ]:
-        """Handle LLM interaction using native tool calling.
-
-        This overrides the parent's _handle_llm_interaction to use native tools
-        instead of JSON/XML parsing.
-        """
         _, prompt_path, response_path = logging_paths
 
         if prompt_path is not None:
             prompt_path.write_text(prompt)
 
-        # Build messages from chat history + new prompt
+
         messages = chat.messages.copy()
         messages.append({"role": "user", "content": prompt})
 
@@ -693,7 +641,7 @@ class AgentHarness(Terminus2):
             request_time_ms = (end_time - start_time) * 1000
             self._api_request_times.append(request_time_ms)
 
-            # Update chat history
+
             assistant_message = {"role": "assistant", "content": tool_response.content}
             if tool_response.tool_calls:
                 assistant_message["tool_calls"] = tool_response.tool_calls
@@ -701,7 +649,7 @@ class AgentHarness(Terminus2):
             chat._messages.append({"role": "user", "content": prompt})
             chat._messages.append(assistant_message)
 
-            # Add tool result messages for each tool call (required by OpenAI API)
+
             if tool_response.tool_calls:
                 for tc in tool_response.tool_calls:
                     tool_call_id = tc.get("id", "")
@@ -714,7 +662,7 @@ class AgentHarness(Terminus2):
                     )
                 chat.reset_response_chain()
 
-            # Update cumulative metrics
+
             if tool_response.usage:
                 chat._cumulative_input_tokens += tool_response.usage.prompt_tokens
                 chat._cumulative_output_tokens += tool_response.usage.completion_tokens
@@ -752,7 +700,7 @@ class AgentHarness(Terminus2):
                     f"{original_instruction}\n\nCurrent state: {limited_screen}"
                 )
 
-            # Retry with summarized context
+
             messages = chat.messages.copy()
             messages.append({"role": "user", "content": summary_prompt})
 
@@ -762,7 +710,7 @@ class AgentHarness(Terminus2):
             request_time_ms = (end_time - start_time) * 1000
             self._api_request_times.append(request_time_ms)
 
-            # Update chat history
+
             assistant_message = {"role": "assistant", "content": tool_response.content}
             if tool_response.tool_calls:
                 assistant_message["tool_calls"] = tool_response.tool_calls
@@ -770,7 +718,7 @@ class AgentHarness(Terminus2):
             chat._messages.append({"role": "user", "content": summary_prompt})
             chat._messages.append(assistant_message)
 
-            # Add tool result messages for each tool call
+
             if tool_response.tool_calls:
                 for tc in tool_response.tool_calls:
                     tool_call_id = tc.get("id", "")
@@ -783,7 +731,7 @@ class AgentHarness(Terminus2):
                     )
                 chat.reset_response_chain()
 
-            # Update cumulative metrics
+
             if tool_response.usage:
                 chat._cumulative_input_tokens += tool_response.usage.prompt_tokens
                 chat._cumulative_output_tokens += tool_response.usage.completion_tokens
@@ -807,7 +755,7 @@ class AgentHarness(Terminus2):
             )
             chat.reset_response_chain()
 
-            # Retry
+
             messages = chat.messages.copy()
             start_time = time.time()
             tool_response = await self._call_llm_with_tools(messages)
@@ -819,7 +767,7 @@ class AgentHarness(Terminus2):
                 assistant_message["tool_calls"] = tool_response.tool_calls
             chat._messages.append(assistant_message)
 
-            # Add tool result messages for each tool call
+
             if tool_response.tool_calls:
                 for tc in tool_response.tool_calls:
                     tool_call_id = tc.get("id", "")
@@ -832,14 +780,14 @@ class AgentHarness(Terminus2):
                     )
                 chat.reset_response_chain()
 
-            # Update cumulative metrics
+
             if tool_response.usage:
                 chat._cumulative_input_tokens += tool_response.usage.prompt_tokens
                 chat._cumulative_output_tokens += tool_response.usage.completion_tokens
                 chat._cumulative_cache_tokens += tool_response.usage.cache_tokens
                 chat._cumulative_cost += tool_response.usage.cost_usd
 
-        # Log response
+
         if response_path is not None:
             response_text = (
                 f"Content: {tool_response.content or ''}\n\n"
@@ -847,12 +795,12 @@ class AgentHarness(Terminus2):
             )
             response_path.write_text(response_text)
 
-        # Parse tool calls into commands
+
         commands, is_task_complete, feedback, analysis, plan, image_read = (
             self._parse_tool_calls(tool_response.tool_calls)
         )
 
-        # Create LLMResponse for compatibility with parent class
+
         llm_response = LLMResponse(
             content=tool_response.content or "",
             reasoning_content=tool_response.reasoning_content,
@@ -876,7 +824,6 @@ class AgentHarness(Terminus2):
         logging_dir: Path | None = None,
         original_instruction: str = "",
     ) -> int:
-        """Run the agent loop with support for image_read tool."""
         if self._context is None:
             raise RuntimeError("Agent context is not set. This should never happen.")
 
@@ -911,7 +858,7 @@ class AgentHarness(Terminus2):
 
             logging_paths = self._setup_episode_logging(logging_dir, episode)
 
-            # Track token counts and cost before this step
+
             tokens_before_input = chat.total_input_tokens
             tokens_before_output = chat.total_output_tokens
             tokens_before_cache = chat.total_cache_tokens
@@ -929,7 +876,7 @@ class AgentHarness(Terminus2):
                 chat, prompt, logging_paths, original_instruction, self._session
             )
 
-            # If we have pending subagent refs, add a system step
+
             if self._pending_subagent_refs:
                 self._trajectory_steps.append(
                     Step(
@@ -964,7 +911,7 @@ class AgentHarness(Terminus2):
                     )
                 self._pending_handoff_prompt = None
 
-            # Create message content
+
             if self._save_raw_content_in_trajectory:
                 message_content = llm_response.content
             else:
@@ -1021,15 +968,15 @@ class AgentHarness(Terminus2):
                 continue
 
             if image_read is not None:
-                # File read path
+
                 image_read_result = await self._execute_image_read(
                     image_read, chat, original_instruction
                 )
 
-                # Capture pending state before modifying
+
                 was_pending_completion = self._pending_completion
 
-                # Handle task completion with double confirmation
+
                 if is_task_complete:
                     if self._pending_completion:
                         observation = image_read_result
@@ -1048,7 +995,7 @@ class AgentHarness(Terminus2):
                     else:
                         observation = image_read_result
 
-                # Build tool_calls for image_read
+
                 tool_calls_list: list[ToolCall] = []
                 observation_results: list[ObservationResult] = []
 
@@ -1108,7 +1055,7 @@ class AgentHarness(Terminus2):
 
                 prompt = observation
             else:
-                # Commands path (existing behavior)
+
                 timeout_occurred, terminal_output = await self._with_block_timeout(
                     self._execute_commands(
                         commands,
@@ -1136,7 +1083,7 @@ class AgentHarness(Terminus2):
                     else:
                         observation = self._limit_output_length(terminal_output)
 
-                # Record trajectory step
+
                 cache_tokens_used = chat.total_cache_tokens - tokens_before_cache
                 step_cost = chat.total_cost - cost_before
 

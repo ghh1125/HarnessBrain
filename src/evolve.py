@@ -1,12 +1,3 @@
-"""Autonomous evolution loop for memory systems (text classification).
-
-Val-only during evolution (test never exposed).
-Uses the configured proposer backend to propose new memory systems.
-
-    python main.py evolve --iterations 20 --fresh
-    python main.py evolve --iterations 10 --run-name my-run
-    python main.py evolve --dataset USPTO --iterations 20
-"""
 
 import json
 import os
@@ -25,11 +16,11 @@ import yaml
 from src import claude_wrapper
 from dotenv import load_dotenv
 
-# ── Component-memory imports ──────────────────────────────────────────────────
-# NOTE: configure(task) is NOT called at import time anymore. This module now
-# hosts BOTH the text-classification and the terminal/agent evolution loops, so
-# the active component-memory taxonomy is selected at runtime inside run_evolve()
-# based on args.task. See the dispatcher at the bottom of this file.
+
+
+
+
+
 from src.memory import configure as _configure_component_memory
 from src.memory.config_loader import (
     module_enabled,
@@ -62,20 +53,20 @@ AGENTS_DIR = EVOLVE_DIR / "agents"
 EVO_WORKSPACE = REPO_ROOT / "workspace" / "evo"
 BASELINE_FILES = {"__init__.py", "no_memory.py", "fewshot_memory.py", "fewshot_all.py"}
 
-# These are updated per-run if --run-name is set
+
 LOGS_DIR = REPO_ROOT / "logs"
 PENDING_EVAL = LOGS_DIR / "pending_eval.json"
 FRONTIER_VAL = LOGS_DIR / "frontier_val.json"
 EVOLUTION_SUMMARY = LOGS_DIR / "evolution_summary.jsonl"
 
 _interrupted = False
-_BENCHMARK_DATASET: str | None = None  # set when evolving a single dataset
+_BENCHMARK_DATASET: str | None = None
 
-# Keyed by candidate name; populated in _candidate_prompt_optimized,
-# consumed at recording time.
+
+
 READING_CONTEXT_CACHE: dict = {}
 
-# ── ANSI colors ──────────────────────────────────────────────
+
 _USE_COLOR = sys.stdout.isatty()
 
 
@@ -229,7 +220,7 @@ def run_cmd(cmd, timeout=7200, cwd=None):
 
 
 def _python_cmd() -> list[str]:
-    # Use the active interpreter (e.g. the current conda env).
+
     return [sys.executable]
 
 
@@ -280,7 +271,6 @@ def _strip_code_fence(text: str) -> str:
 
 
 def extract_python_code(raw_output: str) -> str:
-    """Extract Python code from proposer output, stripping any leading JSON plan."""
     if "```python" in raw_output:
         code = raw_output.split("```python", 1)[1]
         code = code.split("```")[0]
@@ -541,7 +531,6 @@ def _candidate_prompt_optimized(
     iteration: int, index: int, task_prompt: str,
     candidate_role: str = None,
 ) -> tuple[str, dict]:
-    """History-budgeted variant of _candidate_prompt (HyperMem trigger)."""
     guidance_path = EVO_WORKSPACE.parent / "component_memory" / "search_guidance.json"
     guidance: dict = {}
     if guidance_path.exists():
@@ -553,7 +542,7 @@ def _candidate_prompt_optimized(
     _warm_up_cfg = yaml.safe_load(CONFIG_PATH.read_text()).get("memory_config", {}).get("warm_up", {})
     _warm_up_iters = _warm_up_cfg.get("warm_up_iterations", 2)
 
-    # ── HyperMem coarse-to-fine trigger ──────────────
+
     if memory_efficiency_enabled():
         try:
             from src.memory.steering.reading_strategy import ReadingStrategyManager
@@ -631,7 +620,7 @@ Generate candidate {index} for iteration {iteration}.
         except Exception as _hm_err:
             print(f"  [hypermem] warning: {_hm_err}, falling back to history-budget logic")
 
-    # ── history-budget logic (fallback / HyperMem disabled) ──
+
     has_high_priority = bool(guidance.get("high_priority"))
     has_avoid = bool(guidance.get("avoid"))
     guidance_mature = has_high_priority or has_avoid
@@ -884,11 +873,6 @@ def _write_candidate_module(name: str, code: str, iteration: int | None = None) 
 
 
 def _proposer_cli_complete(prompt, iteration, name, attempt, timeout=2400, model=None):
-    """Single-turn proposer completion via the Claude Code CLI (subscription auth).
-
-    Returns (text, token_usage). Strips ANTHROPIC_API_KEY so the CLI uses
-    subscription auth instead of the API, then restores it for downstream eval.
-    """
     model = model or _proposer_claude_model()
     os.environ.pop("CLAUDECODE", None)
     saved_key = os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -913,7 +897,6 @@ def _proposer_cli_complete(prompt, iteration, name, attempt, timeout=2400, model
 
 
 def _proposer_api_complete(llm, prompt):
-    """Single-turn proposer completion through an OpenAI-compatible API."""
     response = llm(prompt)
     usage = llm.get_last_usage() or {}
     usage.setdefault("model", getattr(llm, "model", None))
@@ -921,7 +904,6 @@ def _proposer_api_complete(llm, prompt):
 
 
 def propose_candidates(task_prompt, iteration, timeout=2400):
-    """Returns True if candidates were produced (pending_eval.json exists)."""
     _cfg_full = yaml.safe_load(CONFIG_PATH.read_text()) or {}
     backend, proposer_model = _proposer_label(_cfg_full)
     proposer_source = "API proposer" if backend == "api" else "Claude Code proposer"
@@ -1308,7 +1290,6 @@ def _write_agent(name: str, body: str) -> None:
 
 
 def propose_template_fallback(iteration: int) -> bool:
-    """Static emergency proposer retained for manual debugging only."""
     print(f"  {_yellow('using static emergency proposer')}")
     names = {
         "label_frequency": f"label_frequency_memory_i{iteration}",
@@ -1616,7 +1597,6 @@ def fresh_start():
 
 
 def run_evolve_text(args):
-    """Text-classification evolution loop (Symptom2Disease, LawBench, USPTO, …)."""
     global LOGS_DIR, PENDING_EVAL, FRONTIER_VAL, EVOLUTION_SUMMARY, EVO_WORKSPACE
 
     from src.benchmark import get_model_short_name, load_results
@@ -1661,7 +1641,7 @@ def run_evolve_text(args):
         f"iters={args.iterations}  datasets={datasets}"
     )
 
-    # ── Phase 0: Baselines ─────────────────────────────────────
+
     baselines = cfg["memory_systems"]["baselines"]
     _baseline_timeout = cfg.get("memory_config", {}).get("baseline_timeout", 900)
     if not args.skip_baseline:
@@ -1694,7 +1674,7 @@ def run_evolve_text(args):
                 avg = sum(accs) / len(accs)
                 print(f"    {_bold(bl)}: avg_val={_pct(avg)}")
 
-    # ── Phase 1..N: Evolution ──────────────────────────────────
+
     start_iteration = count_iterations_from_summary() + 1
     for i in range(args.iterations):
         if _interrupted:
@@ -1792,8 +1772,8 @@ def run_evolve_text(args):
         _recorder = EpisodeRecorder() if memory_enabled() else None
         _ev_builder = ComponentEvidenceBuilder() if evidence_quality_enabled() else None
         _ev_ops = EvolutionOperators() if (evidence_quality_enabled() and module_enabled("evolution_operators")) else None
-        # evidence + search_governance on but the evolution_operators module off:
-        # still generate search guidance, but skip the update operators.
+
+
         _ev_guidance_only = (
             EvolutionOperators()
             if (evidence_quality_enabled() and search_governance_enabled() and not module_enabled("evolution_operators"))
@@ -1910,8 +1890,8 @@ def run_evolve_text(args):
                     _total_ep_count += 1
                     _ev_ops.run(_ep, _total_ep_count)
                 elif _ev_guidance_only is not None:
-                    # guidance-only path: log the episode and regenerate search
-                    # guidance, but skip the update operators.
+
+
                     _ev_guidance_only.log_save_event(_ep)
                     _ev_guidance_only.generate_search_guidance(_ep.get("iteration", 0))
 
@@ -2005,7 +1985,7 @@ def run_evolve_text(args):
             f"  {_dim(f'timing: propose={_elapsed(propose_time)} bench={_elapsed(bench_time)} total={_elapsed(wall_time)}')}"
         )
 
-    # ── Phase Final: Test eval ─────────────────────────────────
+
     if _interrupted:
         return
 
@@ -2062,18 +2042,17 @@ def run_evolve_text(args):
         except Exception as _me:
             print(f"{_ts()} {_yellow('Warning')}: metrics collection failed: {_me}")
 
-# ============================================================================
-# AGENT / TERMINAL-BENCH EVOLUTION LOOP
-# Merged from the former src/evolve_terminal.py. Selected at runtime via
-# run_evolve(args) when args.task == 'terminal'. Symbols that collided with
-# the text-classification loop above were renamed with a *_terminal suffix
-# (run_cmd_terminal, render_task_prompt_terminal, fresh_start_terminal,
-#  update_evolution_summary_terminal, _render_reading_context_terminal,
-#  AGENTS_DIR_TERMINAL, run_evolve_terminal).
-# ============================================================================
+
+
+
+
+
+
+
+
+
 
 def _rate_str(rate):
-    """Color-coded pass rate."""
     s = f"{rate:.0%}"
     if rate >= 0.75:
         return _green(s)
@@ -2095,7 +2074,6 @@ if _dotenv_path:
     load_dotenv(_dotenv_path, override=True)
 
 def _render_reading_context_terminal(context: dict) -> str:
-    """Render a ReadingStrategyManager context dict into a prompt string section."""
     parts = []
     if context.get("search_guidance"):
         parts.append("## Search Guidance")
@@ -2207,11 +2185,6 @@ DEFAULT_SEARCH_TRIALS = 2
 DEFAULT_CONCURRENCY = 1
 
 def _task_outcome_memory_enabled_for_dataset(dataset: str) -> bool:
-    """Task-level failure-category memory is TB2-specific.
-
-    SWE-bench and text classification use different failure semantics, so they
-    should not consume TB2 Harbor failure-category mappings.
-    """
     return dataset == "terminal-bench@2.0"
 
 os.environ["HARNESSBRAIN_ENABLE_TASK_OUTCOME_MEMORY"] = (
@@ -2229,7 +2202,6 @@ PROPOSER_ALLOWED_TOOLS = [
 ]
 
 def run_cmd_terminal(cmd, timeout=7200, cwd=None):
-    """Run a subprocess; return CompletedProcess (returncode=124 on timeout)."""
     env = os.environ.copy()
     env["HARBOR_MODEL"] = MODEL
     for key in ("RUNLOOP_API_KEY", "ANTHROPIC_API_KEY"):
@@ -2244,10 +2216,6 @@ def run_cmd_terminal(cmd, timeout=7200, cwd=None):
         return subprocess.CompletedProcess(cmd, 124, "", f"Timed out after {timeout}s")
 
 def harbor_run(import_path, job_name, n_trials=2, n_concurrent=10):
-    """Run harbor eval on the paper TB2 config via runloop.
-
-    result_dict is None if harbor crashed hard; job_dir may still have partial results.
-    """
     cmd = [
         str(REPO_ROOT / "scripts" / "run_eval.sh"),
         import_path,
@@ -2291,16 +2259,6 @@ def harbor_run(import_path, job_name, n_trials=2, n_concurrent=10):
     return job_dir, True
 
 def parse_job_results(job_dir, expected_trials=None):
-    """Parse per-task rewards from a harbor job directory.
-
-    Always reads individual trial dirs (ground truth). Ignores top-level result.json
-    which may be a stale snapshot written before all trials complete.
-
-    Every trial dir counts: no result.json, no verifier_result, corrupt JSON,
-    errored trials — all count as reward=0.
-
-    Returns dict: {task_name: [reward1, reward2, ...]}
-    """
     task_rewards = {}
 
     for trial_dir in sorted(job_dir.iterdir()):
@@ -2334,10 +2292,6 @@ def parse_job_results(job_dir, expected_trials=None):
     return task_rewards
 
 def compute_pass_rates(task_rewards):
-    """Compute pass rate per task and flat average. Returns (per_task, avg).
-
-    avg is total_passes / total_trials (flat, matching harbor's metric).
-    """
     per_task = {}
     total_passes = 0
     total_trials = 0
@@ -2350,10 +2304,6 @@ def compute_pass_rates(task_rewards):
     return per_task, avg
 
 def parse_trial_metrics(job_dir):
-    """Extract per-trial rollout metrics from a harbor job directory.
-
-    Returns dict: {task_name: [trial_metrics, ...]}
-    """
     per_task = {}
     for trial_dir in sorted(job_dir.iterdir()):
         if not trial_dir.is_dir() or "__" not in trial_dir.name:
@@ -2383,7 +2333,6 @@ def parse_trial_metrics(job_dir):
     return per_task
 
 def summarize_trial_metrics(trial_metrics):
-    """Aggregate per-trial metrics into a summary dict."""
     all_costs = []
     all_input = []
     all_output = []
@@ -2430,7 +2379,6 @@ def summarize_trial_metrics(trial_metrics):
     }
 
 def count_iterations():
-    """Highest iteration in evolution_summary.jsonl (for resume)."""
     if not EVOLUTION_SUMMARY.exists():
         return 0
     max_iter = 0
@@ -2444,7 +2392,6 @@ def count_iterations():
     return max_iter
 
 def update_frontier(candidates_results, metrics=None):
-    """Update frontier_val.json with best agent per task and overall best."""
     frontier = json.loads(FRONTIER_VAL.read_text()) if FRONTIER_VAL.exists() else {}
     metrics = metrics or {}
 
@@ -2469,7 +2416,6 @@ def update_frontier(candidates_results, metrics=None):
 def update_evolution_summary_terminal(
     iteration, candidates, results, propose_time=None, bench_time=None, metrics=None
 ):
-    """Append one JSONL row per candidate."""
     frontier = json.loads(FRONTIER_VAL.read_text()) if FRONTIER_VAL.exists() else {}
     best_avg = frontier.get("_best", {}).get("avg_pass_rate", 0)
     metrics = metrics or {}
@@ -2501,7 +2447,6 @@ def update_evolution_summary_terminal(
             f.write(json.dumps(row) + "\n")
 
 def propose_claude(task_prompt, iteration, timeout=2400, model=None):
-    """Call Claude Code to propose new agent candidates. Returns True if pending_eval.json exists."""
     model = model or _proposer_claude_model()
     os.environ.pop("CLAUDECODE", None)
     saved_key = os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -2559,7 +2504,6 @@ def _module_name(value: str | None, fallback: str) -> str:
 
 
 def propose_api_agent(task_prompt, iteration, timeout=2400):
-    """Call an API proposer, then write the returned agent file locally."""
     backend, proposer_model = _proposer_label()
     assert backend == "api"
     llm = _proposer_llm()
@@ -2622,7 +2566,6 @@ def propose_api_agent(task_prompt, iteration, timeout=2400):
     return True
 
 def validate_candidate(name, import_path):
-    """Import-check a candidate agent. Returns True if valid."""
     module_path = import_path.split(":")[0]
     result = run_cmd_terminal(
         [*_python_cmd(), "-c", f"from {module_path} import *; print('OK')"],
@@ -2637,7 +2580,6 @@ def validate_candidate(name, import_path):
     return False
 
 def smoke_test(name, import_path, timeout=1800):
-    """Run 1 trial on 1 task to check for runtime crashes. Returns True if passed."""
     job_name = f"smoke-{name}"
     job_dir = JOBS_DIR / job_name
     if job_dir.exists():
@@ -2687,7 +2629,6 @@ def smoke_test(name, import_path, timeout=1800):
     return True
 
 def render_task_prompt_terminal(iteration, n_trials):
-    """Build the prompt for the proposer Claude session."""
     return (
         f"{TASK_CONTEXT}\n\n"
         f"Run iteration {iteration} of the scaffold evolution loop (KIRA track). "
@@ -2704,7 +2645,6 @@ def render_task_prompt_terminal(iteration, n_trials):
     )
 
 def fresh_start_terminal():
-    """Clear proposed agents (keep baselines) and logs for a fresh run."""
     if AGENTS_DIR_TERMINAL.exists():
         for f in AGENTS_DIR_TERMINAL.iterdir():
             if f.name in (
@@ -2756,7 +2696,7 @@ def run_evolve_terminal(args):
         f"iters={args.iterations}  trials={args.trials}  tasks={n_tasks}"
     )
 
-    # ── Phase 0: Baselines ─────────────────────────────────────
+
     baseline_dirs = {}
     if not args.skip_baseline:
         print(
@@ -2853,7 +2793,7 @@ def run_evolve_terminal(args):
                     for task, rate in sorted(per_task.items()):
                         print(f"    {task:<{max_name}}  {_rate_str(rate)}")
 
-    # ── Phase 1..N: Evolution ──────────────────────────────────
+
     start_iteration = count_iterations() + 1
     for i in range(args.iterations):
         if _interrupted:
@@ -2876,7 +2816,7 @@ def run_evolve_terminal(args):
         propose_start = time.time()
         task_prompt = render_task_prompt_terminal(iteration, args.trials)
 
-        # ── Phase 2: How + Where layer ─────────────────────────
+
         _mode = "full_history"
         _recommended_role = "free_explore"
         _governance_mode = "audit_only_exploration"
@@ -2946,7 +2886,7 @@ def run_evolve_terminal(args):
             hyp = c.get("hypothesis", "")
             print(f"    {ci + 1}. {_bold(c['name'])}: {hyp[:80]}")
 
-        # Validate
+
         valid = []
         print(f"  {_ts()} {_cyan('validating')} {len(candidates)} candidate(s)...")
         for ci, c in enumerate(candidates):
@@ -2977,7 +2917,7 @@ def run_evolve_terminal(args):
             continue
         print(f"  {_green(f'{len(valid)} valid')} out of {len(candidates)} candidates")
 
-        # Benchmark
+
         bench_start = time.time()
         results = {}
         all_metrics = {}
@@ -3016,7 +2956,7 @@ def run_evolve_terminal(args):
                         expected_trials=args.trials,
                     )
 
-                # ── Episode recording (Phase 1 + 2) ───────────────────
+
                 if memory_enabled():
                     try:
                         _recorder = EpisodeRecorder()
@@ -3034,9 +2974,9 @@ def run_evolve_terminal(args):
                             "candidate_role": _recommended_role,
                             "reading_mode": _mode,
                             "governance_mode": _governance_mode,
-                            # Agent-only: lets ComponentEvidenceBuilder locate this
-                            # run's trajectory.json files for trajectory-behavior
-                            # attribution (see _record_trajectory_behavior_attribution).
+
+
+
                             "job_dir": str(job_dir),
                         }
                         if _task_outcome_memory_enabled_for_dataset(ACTIVE_DATASET):
@@ -3060,9 +3000,9 @@ def run_evolve_terminal(args):
                             ComponentEvidenceBuilder().update(_recorded_episode)
                             _all_eps = _recorder.get_all_episodes()
                             EvolutionOperators().run(_recorded_episode, len(_all_eps))
-                            # Close the avoid_retest loop: if this candidate was an
-                            # avoid_retest role, update the avoid memory strength based
-                            # on whether the direction was confirmed or contradicted.
+
+
+
                             if _recommended_role == "avoid_retest":
                                 _avoid_ids = _ep_info.get("assigned_avoid_memory_ids") or []
                                 if _avoid_ids:
@@ -3157,7 +3097,7 @@ def run_evolve_terminal(args):
             f"  {_dim(f'timing: propose={_elapsed(propose_time)} bench={_elapsed(bench_time)} total={_elapsed(wall_time)}')}"
         )
 
-    # ── Phase Final: Winners get 5-trial eval on the full dataset ────────────
+
     if _interrupted or not args.full_eval:
         return
 
@@ -3197,12 +3137,10 @@ def run_evolve_terminal(args):
     print(f"\n{_ts()} {_bold('Evolution complete.')}")
 
 
-# ============================================================================
-# DISPATCHER — single public entry point, routes by --task
-# ============================================================================
+
+
+
 def run_evolve(args):
-    """Unified entry point. Routes to the text or terminal/agent loop based on
-    args.task, after selecting the matching component-memory taxonomy."""
     task = getattr(args, "task", "text") or "text"
     if task == "terminal":
         _configure_component_memory("terminal")

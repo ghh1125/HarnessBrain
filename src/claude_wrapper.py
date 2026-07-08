@@ -1,9 +1,3 @@
-"""
-Minimal wrapper around `claude -p` for programmatic usage with logging.
-Calls Claude Code CLI via subprocess, parses stream-json output,
-tracks tool calls / file reads / token usage, and logs everything to disk.
-Works independently of your local Claude Code setup (skills/plugins not inherited)
-"""
 
 import json
 import os
@@ -19,7 +13,7 @@ from pathlib import Path
 DEFAULT_LOG_DIR = os.environ.get("CLAUDE_WRAPPER_LOG_DIR", "experience")
 _EMPTY_PLUGIN_DIR = Path(__file__).parent / ".empty_plugins"
 
-# Common tool sets
+
 TOOLS_READ = ["Read", "Glob", "Grep"]
 TOOLS_WRITE = ["Read", "Glob", "Grep", "Edit", "Write"]
 TOOLS_BASH = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
@@ -27,13 +21,11 @@ TOOLS_ALL = TOOLS_BASH + ["Agent", "WebSearch", "WebFetch"]
 
 
 def _slugify(text, max_words=4):
-    """Create a short slug from text for directory names."""
     words = re.sub(r"[^a-z0-9\s]", "", text.lower()).split()
     return "-".join(words[:max_words]) or "run"
 
 
 def _clean_read_output(output):
-    """Strip line number prefixes (e.g. '     1→') from Read tool output."""
     lines = []
     for line in output.split("\n"):
         m = re.match(r"\s*\d+\u2192(.*)", line)
@@ -42,7 +34,6 @@ def _clean_read_output(output):
 
 
 def _count_read_lines(output):
-    """Count numbered lines in Read tool output."""
     return sum(1 for line in output.split("\n") if re.match(r"\s*\d+\u2192", line))
 
 
@@ -60,8 +51,8 @@ class SessionResult:
     prompt: str
     text: str
     tool_calls: list
-    files_read: dict  # {path: {"reads": N, "lines": M}}
-    files_written: dict  # {path: {"lines_written": M}}
+    files_read: dict
+    files_written: dict
     token_usage: dict
     duration_seconds: float
     model: str
@@ -77,7 +68,6 @@ class SessionResult:
     log_dir: str = None
 
     def show(self):
-        """Print compact one-line-per-event summary."""
         if self.exit_code != 0:
             print(f"  FAILED (exit={self.exit_code})")
             print(f"  {(self.stderr or 'No stderr.')[:300]}")
@@ -124,7 +114,6 @@ def build_command(
     disable_mcp=True,
     effort=None,
 ):
-    """Build the claude CLI command list."""
     cmd = [
         "claude",
         "--dangerously-skip-permissions",
@@ -170,7 +159,6 @@ def build_command(
 
 
 def _make_relative(filepath, cwd):
-    """Convert absolute path to relative if it's under cwd."""
     if not cwd or not filepath:
         return filepath
     try:
@@ -180,7 +168,6 @@ def _make_relative(filepath, cwd):
 
 
 def parse_stream_events(stdout, prompt, model, duration, exit_code, cwd=None):
-    """Parse newline-delimited JSON from stream-json output."""
     events = []
     text_parts = []
     tool_calls = []
@@ -249,7 +236,7 @@ def parse_stream_events(stdout, prompt, model, duration, exit_code, cwd=None):
                     "output_tokens", token_usage["output_tokens"]
                 )
 
-    # Compute file stats from completed tool calls
+
     files_read = {}
     files_written = {}
     for tc in tool_calls:
@@ -292,17 +279,8 @@ def parse_stream_events(stdout, prompt, model, duration, exit_code, cwd=None):
 
 
 def _extract_json_blocks(text):
-    """Extract named JSON code blocks from response text.
-
-    Looks for patterns like:
-        **`logs/pending_eval.json`:**
-        ```json
-        { ... }
-        ```
-    Returns list of (filename, parsed_json) tuples.
-    """
     results = []
-    # Match: optional bold/backtick filename hint, then ```json block
+
     pattern = re.compile(
         r"(?:\*\*`?([^`*\n]+\.json)`?\*\*[: \t]*\n)?"
         r"```json\s*\n(.*?)```",
@@ -321,23 +299,12 @@ def _extract_json_blocks(text):
 
 
 def log_session(result, log_dir):
-    """Write session to a directory. Returns the directory path.
-
-    Structure:
-        <log_dir>/<timestamp>_<slug>/
-            meta.json      - prompt, model, tokens, cost, file stats
-            response.md    - text output
-            events.jsonl   - raw stream events
-            artifacts/     - JSON blocks extracted from response
-            tools/
-                001_Read.txt   - per-tool-call, human-readable
-    """
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     slug = result.name or _slugify(result.prompt)
     run_dir = Path(log_dir) / f"{ts}_{slug}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # meta.json - compact, scannable (no raw events or tool outputs)
+
     meta = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "prompt": result.prompt,
@@ -362,11 +329,11 @@ def log_session(result, log_dir):
         meta["stderr"] = result.stderr
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
 
-    # response.md
+
     if result.text:
         (run_dir / "response.md").write_text(result.text)
 
-    # artifacts/ - JSON blocks extracted from response text
+
     if result.text:
         json_blocks = _extract_json_blocks(result.text)
         if json_blocks:
@@ -376,19 +343,19 @@ def log_session(result, log_dir):
                 fname = name or f"{i:03d}.json"
                 (art_dir / fname).write_text(json.dumps(data, indent=2) + "\n")
 
-    # events.jsonl
+
     if result.raw_events:
         lines = [json.dumps(e, default=str) for e in result.raw_events]
         (run_dir / "events.jsonl").write_text("\n".join(lines) + "\n")
 
-    # tools/ - one human-readable file per tool call
+
     if result.tool_calls:
         tools_dir = run_dir / "tools"
         tools_dir.mkdir(exist_ok=True)
         for i, tc in enumerate(result.tool_calls, 1):
             parts = []
 
-            # Header
+
             file_path = tc.input.get("file_path", "")
             if file_path:
                 file_path = _make_relative(file_path, result.cwd)
@@ -398,7 +365,7 @@ def log_session(result, log_dir):
             parts.append(header)
             parts.append("")
 
-            # Input fields (skip file_path, already in header)
+
             for k, v in tc.input.items():
                 if k == "file_path":
                     continue
@@ -410,7 +377,7 @@ def log_session(result, log_dir):
                 else:
                     parts.append(f"{k}: {v}")
 
-            # Output (clean Read output of line-number prefixes)
+
             if tc.output:
                 output = (
                     _clean_read_output(tc.output) if tc.name == "Read" else tc.output
@@ -426,7 +393,6 @@ def log_session(result, log_dir):
 
 
 def load_skill(skill_path):
-    """Load a skill markdown file. Returns content string or None if not found."""
     path = Path(skill_path)
     if path.exists():
         return path.read_text()
@@ -434,7 +400,6 @@ def load_skill(skill_path):
 
 
 def load_skills(skills, skill_dir=None):
-    """Load one or more skills by path, name, or from a directory."""
     if skill_dir is None:
         skill_dir = ".claude/skills"
     skill_dir = Path(skill_dir)
@@ -476,7 +441,6 @@ def load_skills(skills, skill_dir=None):
 
 
 def _default_progress(event, tool_calls):
-    """Default progress callback: print one line per tool call to stderr."""
     if event.get("type") != "assistant":
         return
     for block in event.get("message", {}).get("content", []):
@@ -495,7 +459,6 @@ def _default_progress(event, tool_calls):
 
 
 def _enqueue_lines(pipe, q, stream_name):
-    """Read lines from a pipe in a background thread and push them into a queue."""
     try:
         for line in iter(pipe.readline, ""):
             q.put((stream_name, line))
@@ -522,14 +485,6 @@ def run(
     progress=True,
     effort=None,
 ):
-    """Run `claude -p` and return parsed SessionResult. Logs to log_dir.
-
-    Uses your Claude Pro/Max subscription (not API key).
-
-    Args:
-        progress: Show live progress. True = default printer, callable = custom
-                  callback(event, tool_calls_so_far), False/None = silent.
-    """
     if log_dir is None:
         log_dir = DEFAULT_LOG_DIR
     if allowed_tools is None:
@@ -537,7 +492,7 @@ def run(
     if disallowed_tools is None:
         disallowed_tools = []
 
-    # Load skills
+
     all_skills = []
     if skill_path:
         content = load_skill(skill_path)
@@ -548,7 +503,7 @@ def run(
     if skills:
         all_skills.extend(load_skills(skills, skill_dir))
 
-    # Inject skill content into system prompt
+
     skill_info = all_skills if all_skills else None
     if all_skills:
         skill_text = "\n\n".join(
@@ -572,11 +527,11 @@ def run(
     effective_cwd = cwd or os.getcwd()
 
     env = os.environ.copy()
-    # Use API key if available (cheaper, no subscription needed), else subscription auth
-    if "ANTHROPIC_API_KEY" not in env:
-        pass  # will use subscription auth automatically
 
-    # Resolve progress callback
+    if "ANTHROPIC_API_KEY" not in env:
+        pass
+
+
     if progress is True:
         on_event = _default_progress
     elif callable(progress):
@@ -588,7 +543,7 @@ def run(
     stdout_lines = []
     stderr_lines = []
     exit_code = 0
-    # Track tool calls during streaming for progress callback
+
     _live_tool_calls = []
     try:
         proc = subprocess.Popen(
@@ -636,7 +591,7 @@ def run(
                 if on_event:
                     try:
                         event = json.loads(line)
-                        # Track tool calls for progress counter
+
                         if event.get("type") == "assistant":
                             for block in event.get("message", {}).get("content", []):
                                 if (

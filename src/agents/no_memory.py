@@ -1,4 +1,3 @@
-"""NoMemory baseline - no learning, direct prompting."""
 
 from typing import Any
 
@@ -18,7 +17,6 @@ PROMPT = """Answer the following question.
 
 
 class NoMemory(MemorySystem):
-    """Baseline that does not learn - just prompts the LLM directly."""
 
     def __init__(self, llm: LLMCallable):
         super().__init__(llm)
@@ -30,7 +28,6 @@ class NoMemory(MemorySystem):
         return answer, {"full_response": response}
 
     def learn_from_batch(self, batch_results: list[dict[str, Any]]) -> None:
-        """No learning - this baseline ignores all feedback."""
         pass
 
     def get_state(self) -> str:

@@ -1,4 +1,3 @@
-"""Sweep datasets x memory systems — async job runner and results printer."""
 
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-# Project root is one level above this file (src/)
+
 REPO_ROOT = Path(__file__).parent.parent
 CONFIG_PATH = REPO_ROOT / "config.yaml"
 
@@ -30,7 +29,7 @@ def get_model_short_name(model_id: str) -> str:
 
 
 def _python_cmd() -> list[str]:
-    # Use the active interpreter (e.g. the current conda env).
+
     return [sys.executable]
 
 
@@ -39,7 +38,6 @@ _SKIP_MEMORY_FILES = {"__init__", "fewshot_memory"}
 
 
 def discover_all_memory_systems() -> list[tuple[str, str]]:
-    """Auto-discover all *.py agent files in src/agents/."""
     agents_dir = REPO_ROOT / "src" / "agents"
     systems = []
     for f in sorted(agents_dir.glob("*.py")):
@@ -135,9 +133,9 @@ async def run_all_jobs(
     return await asyncio.gather(*tasks)
 
 
-# ---------------------------------------------------------------------------
-# Directory helpers
-# ---------------------------------------------------------------------------
+
+
+
 
 def run_dir(base: Path, dataset: str, memory: str, model: str, seed: int = DEFAULT_SEED) -> Path:
     leaf = model if seed == DEFAULT_SEED else f"{model}_seed{seed}"
@@ -176,9 +174,9 @@ def load_results(base_dir: Path, filename: str = "val.json") -> dict:
     return results
 
 
-# ---------------------------------------------------------------------------
-# Reference numbers from the MCE paper (Qwen3.5-27B, 3 datasets)
-# ---------------------------------------------------------------------------
+
+
+
 
 MCE_REF_METHODS = [
     ("No Context", 0),

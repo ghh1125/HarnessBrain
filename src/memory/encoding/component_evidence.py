@@ -19,8 +19,8 @@ elif __name__.startswith("memory."):
 COMPONENT_MEMORY_DIR = Path(os.environ.get("COMPONENT_MEMORY_DIR", str(Path(__file__).parent.parent.parent.parent / "workspace" / "component_memory")))
 CATEGORY_ATTRIBUTION_MIN_IMPROVEMENTS = 3
 NEW_PASS_ATTRIBUTION_MIN_TASKS = 2
-# Min newly-passing tasks that must show verification-before-submit behavior
-# for trajectory-behavior attribution to fire (agent task only).
+
+
 TRAJECTORY_BEHAVIOR_MIN_VERIFY_TASKS = 2
 
 _TC_COMPONENT_KEYWORDS = {
@@ -86,30 +86,19 @@ _TB_COMPONENT_KEYWORDS = {
     ],
 }
 
-# Active keyword taxonomy — switched by configure(task)
+
 COMPONENT_KEYWORDS = _TC_COMPONENT_KEYWORDS
 
 
 def configure(task: str) -> None:
-    """Switch component taxonomy to match the active task type.
-
-    Called at process start by the evolve.py dispatcher: "text" or "terminal".
-    """
     global COMPONENT_KEYWORDS
     COMPONENT_KEYWORDS = _TB_COMPONENT_KEYWORDS if task == "terminal" else _TC_COMPONENT_KEYWORDS
 
 
-# ── Core functions ────────────────────────────────────────────
+
 
 
 def identify_components(diff: str) -> dict:
-    """Scan diff and count NET NEW keyword hits per component.
-
-    Net new = keyword appears in '+' lines but NOT in '-' lines.
-    This avoids false attribution when a keyword is only renamed/reformatted.
-    When there are no '-' lines (baseline parent), we require >= 2 net hits
-    for a component to count, to reduce noise from boilerplate.
-    """
     hit_counts = {k: 0 for k in COMPONENT_KEYWORDS}
     hit_keywords: dict[str, list[str]] = {k: [] for k in COMPONENT_KEYWORDS}
 
@@ -138,17 +127,17 @@ def identify_components(diff: str) -> dict:
         hit_counts[comp] = len(net_hits)
         hit_keywords[comp] = net_hits
 
-    # Stricter threshold when there's no removed context (new-from-scratch)
+
     min_hits = 2 if not has_context else 1
     changed = [c for c, n in hit_counts.items() if n >= min_hits]
 
-    # Attribution: clear if exactly one dominant component
+
     if len(changed) == 0:
         attribution = "unknown"
     elif len(changed) == 1:
         attribution = "clear"
     else:
-        # Check dominance: if top component has 2x more hits than second, treat as clear
+
         sorted_changed = sorted(changed, key=lambda c: hit_counts[c], reverse=True)
         top_hits = hit_counts[sorted_changed[0]]
         second_hits = hit_counts[sorted_changed[1]] if len(sorted_changed) > 1 else 0
@@ -209,7 +198,7 @@ def compute_verdict(
     return "inconclusive"
 
 
-# ── ComponentEvidenceBuilder ──────────────────────────────────
+
 
 
 class ComponentEvidenceBuilder:
@@ -238,7 +227,7 @@ class ComponentEvidenceBuilder:
         except Exception:
             pass
 
-    # ── Persistence ───────────────────────────────────────────
+
 
     def _load(self) -> dict:
         if self.evidence_path.exists():
@@ -345,13 +334,13 @@ class ComponentEvidenceBuilder:
             1 for item in data.get("strategy_evidence", [])
             if item.get("evidence_scope") == "candidate"
         )
-        # Recompute evidence_summary from current counts
+
         data.setdefault("evidence_summary", {})
         data["evidence_summary"]["actionable_count"] = data.get("clear_evidence_count", 0)
         data["evidence_summary"]["diagnostic_count"] = len(data.get("diagnostic_episodes", []))
         data["evidence_summary"]["hypothesis_count"] = data["evidence_summary"].get("hypothesis_count", 0)
         data["evidence_maturity"] = self._compute_evidence_maturity(data)
-        # Strip internal _fields before saving
+
         clean = json.loads(json.dumps(data))
         for comp_data in clean.get("components", {}).values():
             for fam in comp_data.get("change_families", []) + comp_data.get("regression_families", []):
@@ -455,7 +444,7 @@ class ComponentEvidenceBuilder:
                     "verdict": row.get("verdict", ""),
                 })
 
-    # ── Family clustering ─────────────────────────────────────
+
 
     def _add_to_change_families(
         self,
@@ -497,7 +486,7 @@ class ComponentEvidenceBuilder:
             fam["_keywords"] = list(set(fam.get("_keywords", [])) | set(keywords))
             if extra_fields:
                 fam.update(extra_fields)
-            # Update evidence_strength based on accumulated data
+
             acc_delta = fam["avg_score_delta"]
             min_eff = self._config.get("min_score_delta_for_effective", 2.0)
             min_eps = self._config.get("min_episodes_for_promote", 3)
@@ -613,20 +602,13 @@ class ComponentEvidenceBuilder:
             "task_failure_category_deltas": episode.get("task_failure_category_deltas", {}),
         }
 
-    # ── Evidence Gating ────────────────────────────────────────
+
 
     def _evidence_gating_enabled(self) -> bool:
         from memory.config_loader import evidence_quality_enabled
         return evidence_quality_enabled()
 
     def classify_evidence(self, episode: dict, attribution: str) -> str:
-        """Classify evidence by attribution clarity.
-
-        Returns:
-          "actionable"  – single-component edit, attribution clear → can influence promote/demote
-          "diagnostic"  – multi-component or unknown → record only, no component ranking impact
-          "hypothesis"  – indirect inference (generated by later modules, not auto-assigned here)
-        """
         if attribution == "clear":
             return "actionable"
         return "diagnostic"
@@ -643,11 +625,6 @@ class ComponentEvidenceBuilder:
     def _record_strategy_evidence(
         self, episode: dict, attribution_result: dict, data: dict
     ) -> None:
-        """Preserve every positive candidate as strategy evidence.
-
-        Scope controls how the evidence can be reused. It does not weaken the
-        existing rule that component promotion requires clear single-component evidence.
-        """
         score_delta = float(episode.get("score_delta", 0) or 0)
         if score_delta <= 0:
             return
@@ -715,7 +692,6 @@ class ComponentEvidenceBuilder:
     def _record_diagnostic_evidence(
         self, episode: dict, attribution_result: dict, data: dict
     ) -> None:
-        """Record ambiguous episode to diagnostic_episodes only — no component score impact."""
         score_delta = float(episode.get("score_delta", 0) or 0)
         regression_threshold = self._config.get("regression_threshold", -3.0)
         if score_delta > 0:
@@ -785,12 +761,6 @@ class ComponentEvidenceBuilder:
     def _record_task_level_evidence(
         self, episode: dict, attribution_result: dict, data: dict
     ) -> None:
-        """Attach per-task outcome deltas as diagnostic evidence.
-
-        Task-level evidence is not used for component scoring by itself. It
-        narrows the failure mode associated with an episode so later guidance can
-        target concrete TB2 failure categories.
-        """
         episode_id = episode.get("episode_id", "")
         summary = episode.get("task_outcome_summary") or {}
         deltas = episode.get("task_failure_category_deltas") or {}
@@ -869,14 +839,6 @@ class ComponentEvidenceBuilder:
     def _failure_category_attribution_signals(
         self, episode: dict, attribution_result: dict
     ) -> list[dict]:
-        """Return clear component signals from improved failure categories.
-
-        Failure-category signals are outcome-based: the failure_category →
-        component mapping is itself the mechanistic attribution. Diff confirmation
-        is intentionally not required because TB2 harness edits often touch many
-        components at once, while the task-level failure signature identifies the
-        component most directly responsible for that failure mode.
-        """
         try:
             from memory.encoding.task_outcome_memory import FAILURE_COMPONENTS
         except Exception:
@@ -905,12 +867,6 @@ class ComponentEvidenceBuilder:
     def _new_pass_attribution_signals(
         self, episode: dict, attribution_result: dict
     ) -> list[dict]:
-        """Return clear component signals from tasks that flipped fail→pass.
-
-        Like failure-category signals, new-pass attribution is outcome-based:
-        the source_failure_category → component mapping is the attribution. Diff
-        confirmation is intentionally not required.
-        """
         raw = episode.get("new_pass_attribution") or {}
         signals = []
         for component, payload in sorted(raw.items()):
@@ -934,7 +890,6 @@ class ComponentEvidenceBuilder:
         attribution_result: dict,
         data: dict,
     ) -> bool:
-        """Promote TB2 failure-category improvements to component evidence."""
         signals = self._failure_category_attribution_signals(episode, attribution_result)
         data.setdefault("failure_category_attribution", [])
         recorded = False
@@ -1108,17 +1063,6 @@ class ComponentEvidenceBuilder:
         episode: dict,
         data: dict,
     ) -> bool:
-        """Attribute prompt_template evidence from trajectory behavior patterns.
-
-        For tasks that newly passed, reads their trajectory.json files and checks
-        for verification behavior before submission (rule-based, no LLM).
-        If >= TRAJECTORY_BEHAVIOR_MIN_VERIFY_TASKS tasks show verify behavior,
-        records a prompt_template effective evidence entry.
-
-        AGENT-ONLY: requires episode["job_dir"] to locate trajectory files. The
-        text-classification loop never sets job_dir, so this silently returns
-        False there.
-        """
         try:
             from memory.encoding.trajectory_behavior import (
                 aggregate_behavior_signal,
@@ -1136,15 +1080,15 @@ class ComponentEvidenceBuilder:
         if score_delta <= 0:
             return False
 
-        # Collect all newly-passed task names across all components
+
         raw = episode.get("new_pass_attribution") or {}
         new_pass_tasks: list[str] = []
         for payload in raw.values():
             if isinstance(payload, dict):
                 new_pass_tasks.extend(payload.get("tasks") or [])
-        # Also check task_new_passes if present
+
         new_pass_tasks.extend(episode.get("task_new_passes") or [])
-        new_pass_tasks = list(dict.fromkeys(new_pass_tasks))  # deduplicate, preserve order
+        new_pass_tasks = list(dict.fromkeys(new_pass_tasks))
 
         if not new_pass_tasks:
             return False
@@ -1248,15 +1192,15 @@ class ComponentEvidenceBuilder:
         reg = comp_data.get("regression_edits", 0)
         clear_pos = comp_data.get("clear_positive_count", 0)
 
-        # weak_pos: positive but didn't reach "effective" threshold (e.g. small delta)
-        # avoids double-counting effective edits that are already in clear_pos
+
+
         weak_pos = max(clear_pos - eff, 0)
 
-        # Symmetric around 0.5: effective=+1, weak_pos=+0.5, regression=-1
+
         score = 0.5 + 0.5 * (eff + 0.5 * weak_pos - reg) / max(total, 1)
         comp_data["component_score"] = round(max(0.0, min(1.0, score)), 2)
 
-    # ── Core processing ───────────────────────────────────────
+
 
     def _process_episode(self, episode: dict, data: dict) -> bool:
         diff = episode.get("diff_from_parent", "")
@@ -1308,7 +1252,7 @@ class ComponentEvidenceBuilder:
             episode, data
         )
 
-        # classify and annotate episode in-place
+
         evidence_class = self.classify_evidence(episode, attribution)
         if (
             category_attribution_recorded or new_pass_attribution_recorded
@@ -1337,10 +1281,10 @@ class ComponentEvidenceBuilder:
 
         if not used_for_component_score:
             if self._evidence_gating_enabled():
-                # route to diagnostic_episodes, not ambiguous_evidence
+
                 self._record_diagnostic_evidence(episode, comp_info, data)
             else:
-                # Legacy path: keep ambiguous_evidence list
+
                 data.setdefault("ambiguous_evidence", []).append(evidence)
                 data["ambiguous_evidence_count"] = data.get("ambiguous_evidence_count", 0) + 1
                 for comp_name in components_changed:
@@ -1400,10 +1344,9 @@ class ComponentEvidenceBuilder:
 
         return True
 
-    # ── Public API ────────────────────────────────────────────
+
 
     def _write_back_to_episodes_jsonl(self, episode: dict) -> None:
-        """Rewrite the matching episode line in episodes.jsonl with enriched attribution fields."""
         from memory.encoding.episode_recorder import EpisodeRecorder
         recorder = EpisodeRecorder(self.output_dir)
         if not recorder.episodes_path.exists():
@@ -1480,11 +1423,10 @@ class ComponentEvidenceBuilder:
         return "\n".join(lines)
 
 
-# ── Backfill from group_A_5iter ───────────────────────────────
+
 
 
 def _backfill_from_group_a() -> int:
-    """Populate episodes.jsonl from the group_A_5iter run data."""
     import hashlib
     from memory.encoding.episode_recorder import EpisodeRecorder
 
@@ -1496,7 +1438,7 @@ def _backfill_from_group_a() -> int:
         print("  No group_A_5iter/evolution_summary.jsonl found, skipping backfill.")
         return 0
 
-    # Frontier leader per iteration (from actual run log)
+
     frontier_parents = {1: "fewshot_all", 2: "fewshot_all", 3: "mem_agent_i2_1",
                         4: "mem_agent_i2_1", 5: "mem_agent_i2_1"}
 
@@ -1543,7 +1485,7 @@ if __name__ == "__main__":
     print(builder.get_summary())
     print()
 
-    # Show component_evidence.json stats
+
     data = builder._load()
     print(f"component_evidence.json — {len(data.get('components', {}))} components tracked")
     for comp_name, comp in data.get("components", {}).items():

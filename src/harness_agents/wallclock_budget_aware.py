@@ -1,20 +1,3 @@
-"""
-wallclock_budget_aware - A wall-clock budget-aware variant of stanford_iris_bootstrap.
-
-Single mechanism: injects time-budget warnings into the user prompt as wall-clock
-elapsed time approaches a self-imposed deadline. Targets the agent_timeout
-failure mode (largest failure category in the previous run, 20/89 tasks).
-
-The agent does not know the harness's hard wall-clock deadline directly, so we
-use a self-imposed conservative budget (1500s by default, matching typical
-terminal-bench wall-clock budgets). Three escalating warnings fire at 60%, 80%,
-and 90% of elapsed wall-clock budget, asking the model to verify and submit
-rather than continue exploring.
-
-This mechanism is general-purpose: it does NOT inspect task names or
-hard-code task-specific knowledge. It applies the same budget pressure to
-every task uniformly.
-"""
 
 import asyncio
 import json
@@ -60,18 +43,16 @@ from tenacity import (
 
 
 class BlockError(Exception):
-    """Raised when infrastructure API call blocks for too long."""
 
     pass
 
 
-BLOCK_TIMEOUT_SEC = 600  # 10 minutes
-_MARKER_PREFIX = "__CMDEND__"  # Marker prefix for command completion detection
+BLOCK_TIMEOUT_SEC = 600
+_MARKER_PREFIX = "__CMDEND__"
 
 
 @dataclass
 class ToolCallResponse:
-    """Extended response that includes tool calls."""
 
     content: str | None
     tool_calls: list[dict[str, Any]]
@@ -81,13 +62,12 @@ class ToolCallResponse:
 
 @dataclass
 class ImageReadRequest:
-    """Request to read and analyze an image file."""
 
     file_path: str
     image_read_instruction: str
 
 
-# Tool description strings
+
 _EXECUTE_COMMANDS_DESC = (
     "Call this to execute commands in the terminal with your analysis and plan."
 )
@@ -148,7 +128,7 @@ _IMAGE_READ_INSTRUCTION_DESC = (
     "Be specific about what information to extract."
 )
 
-# Tool definitions for native tool use
+
 TOOLS = [
     {
         "type": "function",
@@ -226,38 +206,23 @@ TOOLS = [
 
 
 class AgentHarness(Terminus2):
-    """
-    wallclock_budget_aware extends stanford_iris_bootstrap with wall-clock
-    budget warnings.
 
-    Mechanism:
-    - Track wall-clock time from the start of the agent loop.
-    - At three escalating thresholds (60%, 80%, 90% of self-imposed budget),
-      prepend a one-time warning to the next user prompt asking the model
-      to verify and submit rather than continue exploring.
 
-    The budget is self-imposed because the agent does not have direct access
-    to the harness's wall-clock deadline. 1500s is a conservative default
-    that fits typical terminal-bench task budgets.
-    """
 
-    # Self-imposed wall-clock budget in seconds. Conservative default that
-    # fits the typical terminal-bench per-task budget envelope.
     _WALLCLOCK_BUDGET_SEC: float = 1500.0
 
-    # Fractions of the wall-clock budget at which to fire warnings.
+
     _BUDGET_THRESHOLDS: tuple[float, ...] = (0.60, 0.80, 0.90)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._marker_seq = 0
         self._total_time_saved = 0.0
-        # Wall-clock timer state.
+
         self._wallclock_start: float | None = None
         self._wallclock_thresholds_fired: set = set()
 
     async def _with_block_timeout(self, coro, timeout_sec: int = BLOCK_TIMEOUT_SEC):
-        """Wrap coroutine with block detection timeout."""
         try:
             return await asyncio.wait_for(coro, timeout=timeout_sec)
         except asyncio.TimeoutError:
@@ -268,7 +233,6 @@ class AgentHarness(Terminus2):
         commands: list[Command],
         session: TmuxSession,
     ) -> tuple[bool, str]:
-        """Execute commands with marker-based polling for early completion detection."""
         for command in commands:
             self._marker_seq += 1
             marker = f"{_MARKER_PREFIX}{self._marker_seq}__"
@@ -318,7 +282,6 @@ class AgentHarness(Terminus2):
     async def run(
         self, instruction: str, environment: BaseEnvironment, context: AgentContext
     ) -> None:
-        """Run the agent, storing the original instruction for later use."""
         self._original_instruction = instruction
         await super().run(instruction, environment, context)
 
@@ -827,7 +790,6 @@ class AgentHarness(Terminus2):
         )
 
     async def _gather_env_snapshot(self) -> str:
-        """Gather a compact environment snapshot to eliminate early exploration turns."""
         if self._session is None:
             return ""
 
@@ -916,14 +878,10 @@ class AgentHarness(Terminus2):
 
         return "[Environment Snapshot]\n" + "\n".join(parts)
 
-    # ------------------------------------------------------------------
-    # Wall-clock budget warning helpers
-    # ------------------------------------------------------------------
-    def _wallclock_warning_text(self, threshold: float, remaining_sec: float) -> str:
-        """Build a one-time wall-clock warning preamble.
 
-        Wording escalates in urgency at 60% / 80% / 90% of self-imposed budget.
-        """
+
+
+    def _wallclock_warning_text(self, threshold: float, remaining_sec: float) -> str:
         if threshold >= 0.90:
             return (
                 f"[CRITICAL TIME WARNING — ~{int(remaining_sec)}s remain in your wall-clock budget]\n"
@@ -939,7 +897,7 @@ class AgentHarness(Terminus2):
                 "  (b) submit your best-effort solution via task_complete now.\n"
                 "Do not pivot to a new approach at this point.\n\n"
             )
-        # 60% threshold
+
         return (
             f"[TIME CHECKPOINT — ~{int(remaining_sec)}s remain in your wall-clock budget]\n"
             "Over half your time has been used. If you have a working solution, "
@@ -949,9 +907,6 @@ class AgentHarness(Terminus2):
         )
 
     def _maybe_prepend_wallclock_warning(self, prompt: str) -> str:
-        """If a new wall-clock threshold has been crossed, prepend a one-time
-        warning preamble to ``prompt``. Returns the (possibly unchanged) prompt.
-        """
         if self._wallclock_start is None:
             return prompt
         elapsed = time.monotonic() - self._wallclock_start
@@ -968,7 +923,7 @@ class AgentHarness(Terminus2):
                 preambles.append(self._wallclock_warning_text(t, remaining))
         if not preambles:
             return prompt
-        # Most-urgent warning first when multiple cross at once.
+
         preambles.sort(key=lambda s: -len(s))
         return "".join(preambles) + prompt
 
@@ -979,25 +934,23 @@ class AgentHarness(Terminus2):
         logging_dir: Path | None = None,
         original_instruction: str = "",
     ) -> int:
-        """Run the agent loop with environment bootstrapping, image_read, and
-        wall-clock budget warnings."""
         if self._context is None:
             raise RuntimeError("Agent context is not set. This should never happen.")
 
         if self._session is None:
             raise RuntimeError("Session is not set. This should never happen.")
 
-        # Inject environment snapshot into the first prompt
+
         try:
             snapshot = await self._gather_env_snapshot()
             if snapshot:
                 initial_prompt = f"{initial_prompt}\n\n{snapshot}"
         except Exception:
-            pass  # Silent failure — don't break the agent
+            pass
 
         prompt = initial_prompt
 
-        # Start wall-clock timer for budget warnings.
+
         self._wallclock_start = time.monotonic()
         self._wallclock_thresholds_fired = set()
 
@@ -1025,11 +978,11 @@ class AgentHarness(Terminus2):
                     self._pending_subagent_refs = subagent_refs
                     self._pending_handoff_prompt = prompt
 
-            # --- Wall-clock budget warning injection -------------------------
-            # Check time elapsed and prepend an escalating warning preamble
-            # when crossing 60% / 80% / 90% of the self-imposed budget.
+
+
+
             prompt = self._maybe_prepend_wallclock_warning(prompt)
-            # ----------------------------------------------------------------
+
 
             logging_paths = self._setup_episode_logging(logging_dir, episode)
 

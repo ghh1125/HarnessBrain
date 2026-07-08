@@ -1,12 +1,4 @@
 import os
-"""ComponentPlaybookBuilder: builds an actionable per-component playbook.
-
-Builds an actionable playbook per component from component_evidence.json
-and direction_clusters.json.
-
-current_best is the highest-scoring episode from this component's
-own supporting_episodes (NOT the global best episode).
-"""
 
 import json
 import sys
@@ -40,7 +32,6 @@ _ALL_COMPONENTS = list(_TC_COMPONENTS)
 
 
 def configure(task: str) -> None:
-    """Switch playbook component set to match the active task family."""
     global _ALL_COMPONENTS
     _ALL_COMPONENTS = list(_TB_COMPONENTS if task == "terminal" else _TC_COMPONENTS)
 
@@ -58,7 +49,7 @@ class ComponentPlaybookBuilder:
         self.episodes_path = episodes_path or COMPONENT_MEMORY_DIR / "episodes.jsonl"
         self.playbooks_path = playbooks_path or COMPONENT_MEMORY_DIR / "component_playbooks.json"
 
-    # ── helpers ───────────────────────────────────────────────
+
 
     def _load_json(self, path: Path) -> dict:
         if not path.exists():
@@ -69,7 +60,6 @@ class ComponentPlaybookBuilder:
             return {}
 
     def _load_episode_scores(self) -> dict:
-        """Return {episode_id: score} from episodes.jsonl."""
         scores: dict[str, float] = {}
         if not self.episodes_path.exists():
             return scores
@@ -92,10 +82,6 @@ class ComponentPlaybookBuilder:
         comp_clusters: dict,
         episode_scores: dict,
     ) -> Optional[dict]:
-        """
-        Scan all actionable supporting_episodes for this component.
-        Return the one with the highest score, along with its cluster.
-        """
         best_score: float = -1e9
         best_ep: Optional[str] = None
         best_fam: Optional[dict] = None
@@ -114,7 +100,7 @@ class ComponentPlaybookBuilder:
         if best_ep is None or best_fam is None:
             return None
 
-        # Find which cluster this family belongs to
+
         from memory.encoding.direction_cluster import DirectionClusterManager
         mgr = DirectionClusterManager(
             evidence_path=self.evidence_path,
@@ -136,7 +122,7 @@ class ComponentPlaybookBuilder:
         episode_scores = self._load_episode_scores()
 
         comp_data = evidence.get("components", {}).get(component, {})
-        comp_data["_component_name"] = component  # for _find_current_best
+        comp_data["_component_name"] = component
         comp_clusters = clusters_data.get("components", {}).get(component, {})
 
         current_best = self._find_current_best(comp_data, comp_clusters, episode_scores)
@@ -167,7 +153,7 @@ class ComponentPlaybookBuilder:
                     "evidence_level": "strong_negative",
                 })
             else:
-                # exploring or no techniques yet
+
                 techniques = cdata.get("techniques", [])
                 if not techniques:
                     ev_level = "unverified"
@@ -184,12 +170,12 @@ class ComponentPlaybookBuilder:
                     "evidence_level": ev_level,
                 })
 
-        # Sort
+
         promising.sort(key=lambda x: x["cluster_avg_delta"], reverse=True)
         avoid.sort(key=lambda x: x["cluster_avg_delta"])
         unexplored.sort(key=lambda x: x["cluster_avg_delta"], reverse=True)
 
-        # Build search_status
+
         n_promising = len(promising)
         n_avoid = len(avoid)
         n_unexplored = len(unexplored)
@@ -242,7 +228,7 @@ class ComponentPlaybookBuilder:
             avoid_list = pb.get("avoid", [])
             unexplored_list = pb.get("unexplored", [])
 
-            # Top 1 promising
+
             if promising_list:
                 p = promising_list[0]
                 delta_str = f"{p['cluster_avg_delta']:+.1f}%"
@@ -250,7 +236,7 @@ class ComponentPlaybookBuilder:
             else:
                 promising_str = "(none)"
 
-            # Top 1 avoid
+
             if avoid_list:
                 a = avoid_list[0]
                 delta_str = f"{a['cluster_avg_delta']:+.1f}%"
@@ -258,7 +244,7 @@ class ComponentPlaybookBuilder:
             else:
                 avoid_str = "(none)"
 
-            # Top 2 unexplored
+
             unexp_parts = [
                 f"{u['cluster']} [{u['evidence_level']}]"
                 for u in unexplored_list[:2]
@@ -272,7 +258,7 @@ class ComponentPlaybookBuilder:
 
         summary = "\n".join(lines)
 
-        # Truncate if over 500 chars
+
         if len(summary) > 500:
             summary = summary[:497] + "..."
 
@@ -282,7 +268,7 @@ class ComponentPlaybookBuilder:
 if __name__ == "__main__":
     from memory.encoding.direction_cluster import DirectionClusterManager
 
-    # Ensure clusters are up to date first
+
     cluster_mgr = DirectionClusterManager()
     cluster_mgr.update_all_clusters()
 
@@ -293,7 +279,7 @@ if __name__ == "__main__":
     print(summary)
     print(f"\nSummary length: {len(summary)} chars")
 
-    # Print retrieval details
+
     data = json.loads(builder.playbooks_path.read_text(encoding="utf-8"))
     ret = data["playbooks"]["retrieval"]
     print(f"\nretrieval current_best: {ret.get('current_best')}")

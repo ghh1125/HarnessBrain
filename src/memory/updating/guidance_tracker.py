@@ -1,11 +1,4 @@
 import os
-"""GuidanceTracker: persistent advantage tracking for search_guidance entries.
-
-Implements audit-gated credit assignment (MemPO-inspired):
-- Stable guidance_id via MD5 hash (not sequence number)
-- Persistent state in guidance_advantage.json (survives search_guidance regeneration)
-- Advantage updated only when audit confirms single-component edit
-"""
 
 import hashlib
 import json
@@ -28,7 +21,7 @@ class GuidanceTracker:
         self.log_path = log_path or EVOLUTION_LOG
         self.advantage_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ── Persistence ───────────────────────────────────────────
+
 
     def load_states(self) -> dict:
         if self.advantage_path.exists():
@@ -53,16 +46,15 @@ class GuidanceTracker:
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    # ── ID generation ─────────────────────────────────────────
+
 
     def make_guidance_id(self, component: str, direction: str) -> str:
         short_hash = hashlib.md5(direction.encode()).hexdigest()[:6]
         return f"g_{component}_{short_hash}"
 
-    # ── Registration ──────────────────────────────────────────
+
 
     def register_guidance(self, guidance_list: list) -> None:
-        """Register new guidance entries; existing entries are preserved unchanged."""
         states = self.load_states()
         changed = False
         for item in guidance_list:
@@ -87,12 +79,11 @@ class GuidanceTracker:
         if changed:
             self.save_states(states)
 
-    # ── Matching ──────────────────────────────────────────────
+
 
     def match_guidance(
         self, proposal_plan: dict, guidance_list: list
     ) -> Optional[str]:
-        """Match proposal_plan to guidance by target_component (loose match)."""
         target_comp = proposal_plan.get("target_component", "")
         if not target_comp:
             return None
@@ -102,12 +93,11 @@ class GuidanceTracker:
                 return self.make_guidance_id(target_comp, direction)
         return None
 
-    # ── Advantage update (audit-gated) ────────────────────────
+
 
     def update_advantage(
         self, guidance_id: str, episode: dict, audit_passed: bool
     ) -> None:
-        """Update advantage score, gated by audit result."""
         states = self.load_states()
         if guidance_id not in states:
             return
@@ -131,7 +121,7 @@ class GuidanceTracker:
         new_score = round(state["advantage_score"] + advantage_delta, 2)
         state["advantage_score"] = new_score
 
-        # Determine status from score
+
         if new_score > 3:
             new_status = "confirmed"
         elif new_score < -4:
@@ -156,10 +146,9 @@ class GuidanceTracker:
             "new_status": new_status,
         })
 
-    # ── Pruning ───────────────────────────────────────────────
+
 
     def prune_guidance(self) -> int:
-        """Archive removed entries; return count of newly pruned."""
         states = self.load_states()
         pruned_at = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         pruned = 0
@@ -180,7 +169,7 @@ class GuidanceTracker:
             self.save_states(states)
         return pruned
 
-    # ── Summary ───────────────────────────────────────────────
+
 
     def get_advantage_summary(self) -> dict:
         states = self.load_states()
@@ -218,10 +207,9 @@ class GuidanceTracker:
             "least_effective": f"{worst[0]} (score={worst[1]})",
         }
 
-    # ── Merge into guidance JSON ──────────────────────────────
+
 
     def merge_into_guidance(self, guidance_json: dict) -> dict:
-        """Merge advantage states into guidance; filter out removed entries."""
         states = self.load_states()
 
         def _enrich_and_filter(items: list) -> list:

@@ -1,11 +1,4 @@
 import os
-"""ReadingStrategyManager: HyperMem coarse-to-fine retrieval trigger.
-
-Three reading modes (coarse → fine):
-  full_history              - early iterations or no guidance signal
-  guidance_plus_component   - one positive guidance + component evidence
-  guidance_only             - >=2 confirmed guidance, minimal context
-"""
 
 import json
 import sys
@@ -32,7 +25,6 @@ BUDGET_GUIDANCE_PLUS_COMPONENT = 3000
 COMPONENT_MEMORY_DIR = Path(os.environ.get("COMPONENT_MEMORY_DIR", str(Path(__file__).parent.parent.parent.parent / "workspace" / "component_memory")))
 
 def _valid_components() -> frozenset:
-    """Returns current valid component names (reflects configure() task selection)."""
     return frozenset(_ce.COMPONENT_KEYWORDS.keys())
 
 
@@ -45,18 +37,17 @@ class ReadingStrategyManager:
         self.evidence_path = evidence_path or COMPONENT_MEMORY_DIR / "component_evidence.json"
         self.episodes_path = episodes_path or COMPONENT_MEMORY_DIR / "episodes.jsonl"
 
-    # ── Hint ─────────────────────────────────────────────────
+
 
     def get_target_component_hint(self, guidance: dict) -> Optional[str]:
-        """Infer likely target component from guidance (no plan available yet)."""
-        # Rule 1: first valid component keyword found in recommendation text
+
         recommendation = guidance.get("recommendation", "") or ""
         valid = _valid_components()
         for comp in sorted(valid):
             if comp in recommendation:
                 return comp
 
-        # Rule 2: first high_priority entry's component
+
         hp = guidance.get("high_priority", [])
         if hp:
             comp = hp[0].get("component", "")
@@ -65,12 +56,12 @@ class ReadingStrategyManager:
 
         return None
 
-    # ── Mode decision ─────────────────────────────────────────
+
 
     def decide_reading_mode(
         self, iteration: int, guidance: dict, warm_up_iters: int
     ) -> str:
-        # Rule 1: early warm_up phase → always full history
+
         if iteration <= warm_up_iters:
             return MODE_FULL_HISTORY
 
@@ -113,33 +104,32 @@ class ReadingStrategyManager:
             maturity.get("has_promising_direction") or len(active_positive) >= 1
         )
 
-        # Rule 2: avoid-only guidance is not enough to compress history.
+
         if not has_strategy and not has_anchor and not has_confirmed and not has_promising:
             return MODE_FULL_HISTORY
 
-        # Rule 3: confirmed directions are the only case for guidance-only.
+
         if has_confirmed and high_priority:
             return MODE_GUIDANCE_ONLY
 
-        # Rule 4: promising component evidence gets a component playbook.
+
         hint = self.get_target_component_hint(guidance)
         if hint and has_promising:
             return MODE_COMPONENT_PLAYBOOK
 
-        # Rule 5: effective strategy evidence drives strategy-context reading.
+
         if has_strategy:
             return MODE_STRATEGY_CONTEXT
 
-        # Rule 5: positive ambiguous anchors drive anchor-context reading.
+
         if has_anchor:
             return MODE_ANCHOR_CONTEXT
 
         return MODE_FULL_HISTORY
 
-    # ── Compact builders ──────────────────────────────────────
+
 
     def build_compact_guidance(self, guidance: dict) -> dict:
-        """Compact guidance view (~800 char budget)."""
         def _trunc(s: str, limit: int) -> str:
             return (s[:limit] + "…") if s and len(s) > limit else (s or "")
 
@@ -173,7 +163,6 @@ class ReadingStrategyManager:
         }
 
     def build_compact_component_evidence(self, component: str) -> dict:
-        """Compact evidence for one component from component_evidence.json."""
         empty = {
             "component": component,
             "top_effective": [],
@@ -227,7 +216,7 @@ class ReadingStrategyManager:
             "top_ambiguous": ambiguous,
         }
 
-    # ── Context builder ───────────────────────────────────────
+
 
     def build_context(
         self,
@@ -306,7 +295,7 @@ class ReadingStrategyManager:
             }
 
         else:
-            # MODE_FULL_HISTORY
+
             recent_episodes: list = []
             if self.episodes_path.exists():
                 try:
@@ -335,7 +324,7 @@ class ReadingStrategyManager:
                 "evolution_summary": evolution_summary,
             }
 
-        # M4 constraint layer — filter context by mode (gated)
+
         try:
             if search_governance_enabled():
                 from memory.steering.constraint_layer import ConstraintLayer
@@ -345,7 +334,7 @@ class ReadingStrategyManager:
 
         return _result
 
-    # ── Char estimation ───────────────────────────────────────
+
 
     def estimate_context_chars(self, context: dict) -> dict:
         def safe_len(obj) -> int:
@@ -378,14 +367,13 @@ class ReadingStrategyManager:
             "total_chars": g + ce + cp + anchors + strategies + re + es,
         }
 
-    # ── Role-specific context builder ─────────────────────────
+
 
     def build_role_specific_context(
             self,
             base_context: dict,
             raw_guidance: dict,
             candidate_role: str) -> dict:
-        """按 candidate_role 裁剪 base_context，不改变 base_context 本身。"""
         import copy
         ctx = copy.deepcopy(base_context)
 
@@ -431,7 +419,7 @@ class ReadingStrategyManager:
             ctx["component_evidence"] = None
             ctx["component_playbook"] = None
             ctx["hypothesis_target"] = hypo_card
-            # 裁剪 search_guidance，避免 full_history 模式下膨胀
+
             raw_sg = ctx.get("search_guidance", {})
             if isinstance(raw_sg, dict):
                 hp = raw_sg.get("high_priority", [])
@@ -466,12 +454,12 @@ class ReadingStrategyManager:
                 "attribution_warning": raw_guidance.get("attribution_warning"),
             }
 
-        # strategy_reuse / component_exploit: use base_context as-is
+
 
         return ctx
 
 
-# ── Unit tests ────────────────────────────────────────────────
+
 
 if __name__ == "__main__":
     mgr = ReadingStrategyManager()

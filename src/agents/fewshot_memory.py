@@ -1,13 +1,3 @@
-"""Few-Shot Memory - baseline using all training examples as demonstrations.
-
-Accumulates (raw_question, ground_truth) pairs during training, uses them as
-few-shot context at test time. Uses raw questions (not full preprocessed prompts)
-to avoid repeating task context per example — matching MCE reproduce behavior.
-
-Variant:
-- FewShotAll: Up to 9999 examples
-Uses a global max_chars=50000 cap (matching MCE reproduce).
-"""
 
 import json
 import random
@@ -33,7 +23,6 @@ MAX_CHARS = 30000
 
 
 class FewShotMemory(MemorySystem):
-    """Few-shot baseline - accumulate all examples, use as demonstrations."""
 
     def __init__(
         self,
@@ -45,15 +34,6 @@ class FewShotMemory(MemorySystem):
         self.examples: list[dict[str, str]] = []
 
     def _format_examples_section(self, seed: int | None = None) -> str:
-        """Format examples as few-shot demonstrations, respecting global char limit.
-
-        Uses raw_question (short Q/A) when available to avoid repeating task
-        context per example. Falls back to full input for non-MCE datasets.
-
-        Args:
-            seed: If provided, randomly sample max_examples and shuffle order.
-                  Each eval instance should pass a different seed for diversity.
-        """
         if not self.examples:
             return ""
 
@@ -70,19 +50,18 @@ class FewShotMemory(MemorySystem):
         parts = []
         total_chars = 0
         for i, ex in enumerate(to_use, 1):
-            # Use raw_question for demos (avoids repeating task context per example)
+
             question = ex.get("raw_question", ex["input"])
             part = f"Q: {question}\nA: {ex['target']}"
             if total_chars + len(part) > MAX_CHARS:
                 break
             parts.append(part)
-            total_chars += len(part) + 2  # \n\n separator
+            total_chars += len(part) + 2
 
         return "\n\n".join(parts)
 
     def predict(self, input: str) -> tuple[str, dict[str, Any]]:
-        """Generate prediction using accumulated few-shot examples."""
-        # Use input hash as seed so each instance gets a different random sample
+
         seed = hash(input) & 0xFFFFFFFF
         examples_section = self._format_examples_section(seed=seed)
         prompt = PROMPT_TEMPLATE.format(
@@ -99,7 +78,6 @@ class FewShotMemory(MemorySystem):
         }
 
     def learn_from_batch(self, batch_results: list[dict[str, Any]]) -> None:
-        """Accumulate all examples with ground truth labels."""
         for r in batch_results:
             ex = {"input": r["input"], "target": r["ground_truth"]}
             if "raw_question" in r:
@@ -107,14 +85,11 @@ class FewShotMemory(MemorySystem):
             self.examples.append(ex)
 
     def get_context_length(self) -> int:
-        """Return length of the examples section actually injected per query."""
         return len(self._format_examples_section())
 
     def get_state(self) -> str:
-        """Serialize memory state."""
         return json.dumps({"examples": self.examples}, indent=2)
 
     def set_state(self, state: str) -> None:
-        """Restore memory state from JSON."""
         data = json.loads(state)
         self.examples = data.get("examples", [])

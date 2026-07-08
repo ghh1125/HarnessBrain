@@ -1,11 +1,3 @@
-"""ConstraintLayer: M4 inter-component constraint enforcement.
-
-Provides three services:
-  1. compute_confidence_score  – per-guidance confidence with penalties/bonuses
-  2. rank_guidance             – re-ranks high_priority/avoid lists
-  3. validate_proposal_plan    – checks plan against confirmed conflict patterns
-  4. filter_context_by_mode    – prunes inter_component content by reading mode
-"""
 
 import sys
 from pathlib import Path
@@ -16,14 +8,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 
 class ConstraintLayer:
-    # ── 0: maturity-conditioned governance ───────────────────
+
 
     def choose_governance_mode(self, guidance: dict) -> dict:
-        """Choose governance strength from evidence maturity.
-
-        This is advisory metadata. It does not reject candidates; callers can
-        use it to choose soft vs strong plan prompts and to audit behavior.
-        """
         maturity = guidance.get("evidence_maturity", {}) or {}
         has_confirmed = bool(maturity.get("has_confirmed_direction"))
         utility_summary = guidance.get("memory_utility_summary", {}) or {}
@@ -98,7 +85,7 @@ class ConstraintLayer:
             "retest_pool": retest_pool,
         }
 
-    # ── 1: confidence score ───────────────────────────────────
+
 
     def compute_confidence_score(
         self,
@@ -109,16 +96,16 @@ class ConstraintLayer:
         component = guidance_item.get("component")
         confirmed_conflicts = inter_component_evidence.get("confirmed_conflicts", [])
 
-        # Single-component detection
+
         is_single = (
             guidance_item.get("attribution_mode") == "single_component"
             or "components" not in guidance_item
         )
 
-        # Adjustment 1: single-component bonus
+
         single_component_bonus = 0.2 if is_single else 0.0
 
-        # Adjustment 2: co_change_penalty (lighter for single-component)
+
         if is_single:
             component_in_conflict = any(
                 component in c.get("components", [])
@@ -136,7 +123,7 @@ class ConstraintLayer:
             )
             co_change_penalty = -0.4 if max_overlap >= 2 else -0.1
 
-        # Adjustment 3: advantage bonus
+
         advantage_score = guidance_item.get("advantage_score", 0)
         if advantage_score > 2:
             advantage_bonus = 0.15
@@ -164,7 +151,7 @@ class ConstraintLayer:
 
         return final_score, confidence_factors
 
-    # ── 2: rank guidance ──────────────────────────────────────
+
 
     def rank_guidance(
         self,
@@ -191,7 +178,7 @@ class ConstraintLayer:
 
         return result
 
-    # ── 3: validate proposal plan ─────────────────────────────
+
 
     def validate_proposal_plan(
         self,
@@ -210,7 +197,7 @@ class ConstraintLayer:
 
         constraint_warnings: list = []
         _warning_seen: set = set()
-        severity_level = 0  # 0=none 1=low 2=medium 3=high
+        severity_level = 0
 
         def _add_warning(msg: str) -> None:
             if msg not in _warning_seen:
@@ -224,7 +211,7 @@ class ConstraintLayer:
         )
         strict_boundary = governance_mode == "strong_component_boundary"
 
-        # Rule 1: multi-component attribution declaration
+
         if not is_single and not audit_only:
             _add_warning(
                 "Plan declares multi-component edit; attribution will be ambiguous. "
@@ -232,7 +219,7 @@ class ConstraintLayer:
             )
             severity_level = max(severity_level, 1)
 
-        # Rule 2: confirmed_conflict detection
+
         for conflict in confirmed_conflicts:
             conflict_components = set(conflict.get("components", []))
             plan_set = set(plan_components)
@@ -253,7 +240,7 @@ class ConstraintLayer:
                     )
                     severity_level = max(severity_level, 3 if strict_boundary else 2)
 
-        # Rule 3: high co-change risk
+
         co_patterns = inter_component_evidence.get("co_change_patterns", [])
         for pattern in co_patterns:
             if (
@@ -281,7 +268,7 @@ class ConstraintLayer:
             ),
         }
 
-    # ── 4: filter context by mode ─────────────────────────────
+
 
     def filter_context_by_mode(self, context: dict, reading_mode: str) -> dict:
         result = dict(context)
@@ -297,12 +284,12 @@ class ConstraintLayer:
                     "confirmed_conflicts": inter.get("confirmed_conflicts", []),
                 }
 
-        # full_history: keep everything as-is
+
 
         return result
 
 
-# ── Unit tests ────────────────────────────────────────────────
+
 
 if __name__ == "__main__":
     mock_inter_evidence = {
@@ -322,7 +309,7 @@ if __name__ == "__main__":
     constraint = ConstraintLayer()
     all_passed = True
 
-    # Scenario 1: single-component guidance
+
     item1 = {
         "component": "retrieval",
         "confidence": 0.8,
@@ -330,14 +317,14 @@ if __name__ == "__main__":
         "attribution_mode": "single_component",
     }
     score1, factors1 = constraint.compute_confidence_score(item1, mock_inter_evidence)
-    # Expected: base=0.8 + single=+0.2 + co=-0.1 + adv=+0.05 = 0.95
+
     expected1 = round(0.8 + 0.2 - 0.1 + 0.05, 4)
     ok1 = abs(score1 - expected1) < 1e-6
     print(f"Scenario 1 (single-component guidance): score={score1:.4f}  "
           f"expected={expected1:.4f}  factors={factors1}  {'PASS' if ok1 else 'FAIL'}")
     all_passed = all_passed and ok1
 
-    # Scenario 2: multi-component guidance with overlap >= 2
+
     item2 = {
         "component": "retrieval",
         "components": ["retrieval", "prompt"],
@@ -346,14 +333,14 @@ if __name__ == "__main__":
         "attribution_mode": "multi_component",
     }
     score2, factors2 = constraint.compute_confidence_score(item2, mock_inter_evidence)
-    # Expected: base=0.8 + single=0 + co=-0.4 + adv=0 = 0.4
+
     expected2 = round(0.8 + 0 - 0.4 + 0.0, 4)
     ok2 = abs(score2 - expected2) < 1e-6
     print(f"Scenario 2 (multi-component guidance):  score={score2:.4f}  "
           f"expected={expected2:.4f}  factors={factors2}  {'PASS' if ok2 else 'FAIL'}")
     all_passed = all_passed and ok2
 
-    # Scenario 3: single-component plan validation → low
+
     plan3 = {
         "target_component": "retrieval",
         "attribution_mode": "single_component",
@@ -364,7 +351,7 @@ if __name__ == "__main__":
           f"warnings={result3['constraint_warnings']}  {'PASS' if ok3 else 'FAIL'}")
     all_passed = all_passed and ok3
 
-    # Scenario 4: multi-component plan with overlap >= 2 → medium
+
     plan4 = {
         "target_component": "retrieval",
         "components": ["retrieval", "prompt"],
@@ -376,7 +363,7 @@ if __name__ == "__main__":
           f"warnings={result4['constraint_warnings']}  {'PASS' if ok4 else 'FAIL'}")
     all_passed = all_passed and ok4
 
-    # Scenario 5: filter_context_by_mode guidance_only
+
     ctx5 = {
         "search_guidance": {"high_priority": []},
         "inter_component": {"confirmed_conflicts": [{"components": ["a", "b"]}]},

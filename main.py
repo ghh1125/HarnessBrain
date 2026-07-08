@@ -1,20 +1,3 @@
-"""HarnessBrain — entry point.
-
-Subcommands:
-  evolve      Run the evolution loop (LLM proposes → benchmark evaluates)
-  benchmark   Run or display benchmark results (text classification task)
-
-Task selection:
-  --task text      Text classification (Symptom2Disease, LawBench, USPTO)  [default]
-  --task terminal  Terminal-Bench 2.0 / SWE-bench (Docker-based, harbor eval)
-
-Examples:
-  python main.py evolve --dataset USPTO --iterations 20
-  python main.py evolve --task terminal --iterations 5 --trials 2
-  python main.py benchmark --dataset USPTO
-  python main.py benchmark --test --results
-  python main.py benchmark --frontier --test
-"""
 
 import argparse
 import asyncio
@@ -26,7 +9,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 
 def _add_evolve_args(p: argparse.ArgumentParser):
-    """Combined evolve args for both text and terminal tasks."""
     p.add_argument("--iterations", type=int, default=None,
                    help="Number of evolution iterations (uses the built-in per-task default if unset)")
     p.add_argument("--propose-timeout", type=int, default=2400,
@@ -37,11 +19,11 @@ def _add_evolve_args(p: argparse.ArgumentParser):
                    help="Clear previous agents and logs before starting")
     p.add_argument("--skip-baseline", action="store_true",
                    help="Skip Phase 0 baseline evaluation")
-    # Text-task args
+
     p.add_argument("--datasets", nargs="+", default=None,
                    help="[text] Datasets to evolve on (default: all from config.yaml)")
     p.add_argument("--model", default=None, help="[text] Classifier model override")
-    # Terminal-task args
+
     p.add_argument("--trials", type=int, default=2,
                    help="[terminal] Trials per task during evolution")
     p.add_argument("--skip-smoke", action="store_true",
@@ -91,9 +73,9 @@ def main():
         import yaml
         cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
 
-        # Unified entry point: src.evolve.run_evolve dispatches internally by
-        # args.task (text → classification loop, terminal → agent loop) and
-        # selects the matching component-memory taxonomy at runtime.
+
+
+
         import signal
         import src.evolve as _ev
         signal.signal(signal.SIGINT, _ev._handle_signal)

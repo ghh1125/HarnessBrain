@@ -31,7 +31,7 @@ class EvolutionOperators:
         except Exception:
             pass
 
-    # ── Helpers ───────────────────────────────────────────────
+
 
     def _load(self) -> dict:
         if self.evidence_path.exists():
@@ -50,7 +50,6 @@ class EvolutionOperators:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _fam_keywords(self, fam: dict) -> set:
-        """Reconstruct keywords from description (set by M2 as ', '.join(kws[:3]))."""
         raw = fam.get("description", "")
         return {kw.strip() for part in raw.split("/") for kw in part.split(",") if kw.strip()}
 
@@ -73,7 +72,6 @@ class EvolutionOperators:
         return 0
 
     def _adaptive_effect_scale(self, data: dict) -> float:
-        """Median non-zero evidence effect; falls back to the configured scale."""
         eps = float(self._config.get("effect_epsilon", 1e-6))
         vals: list[float] = []
         for comp in data.get("components", {}).values():
@@ -92,7 +90,6 @@ class EvolutionOperators:
         *,
         polarity: str,
     ) -> float:
-        """r_t(e): polarity consistency, distinguishable effect, recent confirmation."""
         eps = float(self._config.get("effect_epsilon", 1e-6))
         if polarity == "negative":
             n_support = len(fam.get("episodes", []))
@@ -117,7 +114,6 @@ class EvolutionOperators:
         return reliability
 
     def _state_compatibility(self, fam: dict) -> float:
-        """q_t(e): current-state compatibility from structural context discount."""
         q = float(fam.get("context_discount", 1.0) or 1.0)
         q = max(0.0, min(1.0, q))
         fam["state_compatibility"] = round(q, 4)
@@ -131,7 +127,6 @@ class EvolutionOperators:
         *,
         polarity: str,
     ) -> float:
-        """m_t(e)=sqrt(r_t(e)q_t(e)); stored for guidance/reporting."""
         r = self._history_reliability(
             fam, current_iteration, effect_scale, polarity=polarity
         )
@@ -141,10 +136,9 @@ class EvolutionOperators:
         fam["effect_scale"] = round(effect_scale, 4)
         return maturity
 
-    # ── Operator 1: Log Save Event ───────────────────────────
+
 
     def log_save_event(self, episode: dict) -> None:
-        """Log which family this episode landed in; M2 owns evidence mutation."""
         episode_id = episode.get("episode_id", "")
         data = self._load()
 
@@ -163,13 +157,11 @@ class EvolutionOperators:
         self._save(data)
 
     def save(self, episode: dict) -> None:
-        """Compatibility wrapper. This logs only; evidence save happens in M2."""
         self.log_save_event(episode)
 
-    # ── Operator 2: Update ────────────────────────────────────
+
 
     def update_weights(self) -> None:
-        """Recompute evidence_strength and component_score for all families."""
         data = self._load()
         min_eps = self._config.get("min_episodes_for_promote", 3)
 
@@ -216,10 +208,9 @@ class EvolutionOperators:
 
         self._save(data)
 
-    # ── Operator 3: Merge ─────────────────────────────────────
+
 
     def merge_families(self) -> None:
-        """Merge regression families whose keyword overlap >= 50%."""
         data = self._load()
         merged_any = False
 
@@ -249,7 +240,7 @@ class EvolutionOperators:
                     new_fams.append(fam_i)
                     continue
 
-                # Merge fam_i with all matching j's
+
                 all_ids = [fam_i["family_id"]] + [reg_fams[j]["family_id"] for j in to_merge]
                 all_eps: list = list(fam_i.get("episodes", []))
                 all_deltas: list = [fam_i.get("avg_score_delta", 0)]
@@ -288,10 +279,9 @@ class EvolutionOperators:
         if merged_any:
             self._save(data)
 
-    # ── Operator 4: Decay ─────────────────────────────────────
+
 
     def decay(self) -> None:
-        """Decay weights: regression families × 0.5, inconclusive families × 0.8."""
         data = self._load()
         affected: list = []
 
@@ -315,10 +305,9 @@ class EvolutionOperators:
             })
             self._save(data)
 
-    # ── Operator 5: Promote ───────────────────────────────────
+
 
     def promote(self) -> None:
-        """Promote promising families that meet quality thresholds."""
         data = self._load()
         min_eps = self._config.get("min_episodes_for_promote", 3)
         min_delta = self._config.get("min_score_delta_for_effective", 2.0)
@@ -350,10 +339,9 @@ class EvolutionOperators:
         if promoted_any:
             self._save(data)
 
-    # ── Operator 6: Demote ────────────────────────────────────
+
 
     def demote(self, episode: dict) -> None:
-        """Demote confirmed_guidance families when a regression contradicts them."""
         if episode.get("status") != "regression":
             return
 
@@ -390,10 +378,9 @@ class EvolutionOperators:
         if demoted_any:
             self._save(data)
 
-    # ── Operator 7: Migrate on Transition ────────────────────
+
 
     def migrate_on_transition(self, transition: str | dict) -> None:
-        """Contextual evidence discounting based on harness structural changes."""
         from memory.encoding.component_evidence import identify_components
         if isinstance(transition, dict):
             diff = transition.get("diff_from_parent", "")
@@ -485,10 +472,9 @@ class EvolutionOperators:
             })
             self._save(data)
 
-    # ── Retest pool for dynamic avoid memory ──────────────────
+
 
     def generate_retest_pool(self, current_iteration: int) -> list:
-        """Pick one active avoid memory that is due for retesting."""
         try:
             from memory.updating.memory_utility import MemoryUtilityTracker
 
@@ -527,7 +513,7 @@ class EvolutionOperators:
             print(f"[retest_pool] failed: {e}")
             return []
 
-    # ── generate_search_guidance ──────────────────────────────
+
 
     def generate_search_guidance(self, current_iteration: int = 0) -> None:
         data = self._load()
@@ -541,7 +527,7 @@ class EvolutionOperators:
             print(f"[memory_utility] warning: {e}")
             _memory_utility = None
 
-        # ── 诊断当前主要失败模式（区分 agent 任务 vs 分类任务）──────────
+
         current_diagnosis: dict = {}
         _top_failure_modes: list[str] = []
         try:
@@ -554,7 +540,7 @@ class EvolutionOperators:
                 _is_agent_task = bool(_task_outcomes or _fc_deltas)
 
                 if _is_agent_task:
-                    # agent 任务（TB2 / SWE-bench）：按失败类型分布诊断
+
                     _failure_dist: dict = {}
                     if _task_outcomes:
                         _failure_dist = {
@@ -580,7 +566,7 @@ class EvolutionOperators:
                         ),
                     }
                 else:
-                    # 分类任务：按 score / score_delta / status 诊断
+
                     _score = _latest.get("score", 0)
                     _delta = _latest.get("score_delta", 0)
                     _status = _latest.get("status", "")
@@ -778,8 +764,8 @@ class EvolutionOperators:
                         "effective_strength": round(maturity, 3),
                     })
 
-        # ── agent 任务：按失败模式对症重排 high_priority ──────────────
-        # 分类任务无 failure_category，跳过此步
+
+
         if _top_failure_modes and high_priority:
             def _failure_relevance(item: dict) -> int:
                 fc = item.get("failure_category") or item.get("source_failure_category") or ""
@@ -789,7 +775,7 @@ class EvolutionOperators:
                 return 1
             high_priority.sort(key=_failure_relevance)
 
-        # Domain-specific unexplored directions
+
         if current_diagnosis.get("task_type") == "agent":
             unexplored = [
                 "agent_loop: adaptive step limit based on task complexity (not tried)",
@@ -903,7 +889,7 @@ class EvolutionOperators:
                 ),
             })
 
-        # Attribution warning
+
         ambiguous_evidence = data.get("ambiguous_evidence", [])
         n_ambig = len(ambiguous_evidence)
         n_ambig_reg = sum(
@@ -932,9 +918,9 @@ class EvolutionOperators:
             )
             attribution_warning = f"{attribution_warning}; {extra}" if attribution_warning else extra
 
-        # Terminal-Bench 2 task-level outcome guidance. This stays inactive for
-        # text classification and SWE unless a terminal run has produced
-        # task_outcomes.json in the component-memory directory.
+
+
+
         task_outcome_guidance: dict = {}
         task_failure_focus: dict = {}
         try:
@@ -959,7 +945,7 @@ class EvolutionOperators:
             task_outcome_guidance = {}
             task_failure_focus = {}
 
-        # Best component to focus on
+
         exploit_candidates = {
             name: c.get("component_score", 0.5)
             for name, c in data.get("components", {}).items()
@@ -1058,7 +1044,7 @@ class EvolutionOperators:
         if task_failure_focus:
             recommendation_detail["task_failure_focus"] = task_failure_focus
 
-        # Inter-component guidance
+
         inter_component: dict = {}
         try:
             from memory.encoding.inter_component import InterComponentEvidence
@@ -1067,7 +1053,7 @@ class EvolutionOperators:
         except Exception:
             pass
 
-        # evidence_quality + diagnostic_insights (gated)
+
         evidence_quality: dict = {}
         diagnostic_insights: list = []
 
@@ -1096,7 +1082,7 @@ class EvolutionOperators:
                 "reliability_warning": reliability_warning,
             }
 
-            # Aggregate diagnostic patterns by component set
+
             pattern_map: dict[str, list] = {}
             for dep in diag_eps:
                 comps = tuple(sorted(dep.get("components_changed", [])))
@@ -1206,7 +1192,7 @@ class EvolutionOperators:
         except Exception as e:
             print(f"[memory_utility] guidance enrichment warning: {e}")
 
-        # guidance advantage tracking (gated)
+
         try:
             from memory.updating.guidance_tracker import GuidanceTracker
             if evidence_quality_enabled():
@@ -1218,7 +1204,7 @@ class EvolutionOperators:
         except Exception:
             pass
 
-        # component_playbook_summary (gated)
+
         try:
             if memory_efficiency_enabled():
                 from memory.steering.component_playbook import ComponentPlaybookBuilder
@@ -1227,7 +1213,7 @@ class EvolutionOperators:
         except Exception:
             pass
 
-        # M4 constraint layer — rank guidance (gated)
+
         try:
             if search_governance_enabled():
                 from memory.steering.constraint_layer import ConstraintLayer
@@ -1259,7 +1245,7 @@ class EvolutionOperators:
             json.dumps(guidance, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-    # ── Main dispatcher ───────────────────────────────────────
+
 
     def run(self, episode: dict, total_episodes: int) -> None:
         self.log_save_event(episode)
@@ -1272,7 +1258,7 @@ class EvolutionOperators:
         self.demote(episode)
         self.generate_search_guidance(episode.get("iteration", 0))
 
-        # hierarchical cluster + component playbook (gated)
+
         try:
             if evidence_quality_enabled():
                 from memory.encoding.direction_cluster import DirectionClusterManager
@@ -1294,16 +1280,16 @@ if __name__ == "__main__":
 
     ops = EvolutionOperators()
 
-    # Log all save events first (families are already placed by M2)
+
     print(f"Running operators on {len(episodes)} episodes...")
     for ep in episodes:
         ops.log_save_event(ep)
 
-    # Run collective operators
+
     ops.update_weights()
     ops.merge_families()
 
-    # Decay triggers at multiples of 5 (15 % 5 == 0)
+
     if len(episodes) % 5 == 0:
         ops.decay()
 
@@ -1315,7 +1301,7 @@ if __name__ == "__main__":
     current_iter = max(ep.get("iteration", 0) for ep in episodes)
     ops.generate_search_guidance(current_iter)
 
-    # Print evolution log summary
+
     if ops.log_path.exists():
         log_entries = [
             json.loads(l) for l in ops.log_path.read_text().strip().split("\n") if l.strip()
@@ -1327,7 +1313,7 @@ if __name__ == "__main__":
         for op, cnt in sorted(ops_count.items()):
             print(f"  {op}: {cnt}")
 
-    # Print search_guidance.json
+
     guidance = json.loads(ops.guidance_path.read_text())
     print("\n=== search_guidance.json ===")
     print(f"iteration: {guidance['iteration']}")

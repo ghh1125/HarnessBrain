@@ -1,11 +1,4 @@
 import os
-"""DirectionClusterManager: groups technique families into direction clusters.
-
-Groups technique families into direction clusters per component.
-cluster_verdict is computed from actionable evidence only;
-diagnostic (ambiguous) families go into ambiguous_warnings and do not
-affect the verdict.
-"""
 
 import json
 from datetime import datetime
@@ -135,7 +128,7 @@ class DirectionClusterManager:
         self.evidence_path = evidence_path or COMPONENT_MEMORY_DIR / "component_evidence.json"
         self.clusters_path = clusters_path or COMPONENT_MEMORY_DIR / "direction_clusters.json"
 
-    # ── helpers ───────────────────────────────────────────────
+
 
     def _family_text(self, family: dict) -> str:
         return " ".join([
@@ -148,7 +141,7 @@ class DirectionClusterManager:
             return "actionable"
         return "diagnostic"
 
-    # ── public API ────────────────────────────────────────────
+
 
     def assign_cluster(self, component: str, family: dict) -> str:
         clusters = DIRECTION_CLUSTERS.get(component, {})
@@ -170,7 +163,7 @@ class DirectionClusterManager:
     def build_clusters(self, component: str, all_families: list) -> dict:
         cluster_defs = DIRECTION_CLUSTERS.get(component, {})
 
-        # Initialise buckets
+
         buckets: dict[str, dict] = {}
         for cid, cdef in cluster_defs.items():
             buckets[cid] = {
@@ -201,7 +194,7 @@ class DirectionClusterManager:
             target = buckets.get(cid, other_bucket)
 
             if is_regression:
-                # Regression families: count toward regression_count (actionable)
+
                 target["regression_count"] += 1
                 target["delta_sum"] += float(fam.get("avg_score_delta", 0))
                 target["delta_count"] += 1
@@ -217,7 +210,7 @@ class DirectionClusterManager:
                     "note": "Multi-component edit; cannot attribute to single component",
                 })
             else:
-                # Actionable: record keywords seen
+
                 for kw in cluster_defs.get(cid, {}).get("keywords", []):
                     if kw.lower() in self._family_text(fam):
                         target["_seen_keywords"].add(kw)
@@ -242,7 +235,7 @@ class DirectionClusterManager:
                     target["delta_sum"] += float(fam.get("avg_score_delta", 0))
                     target["delta_count"] += 1
 
-        # Build final result
+
         result: dict = {}
         for cid, bucket in buckets.items():
             eff = bucket["effective_count"]
@@ -259,7 +252,7 @@ class DirectionClusterManager:
             n = bucket["delta_count"]
             cluster_avg_delta = round(bucket["delta_sum"] / n, 2) if n > 0 else 0.0
 
-            # Unexplored: cluster keywords not seen in any assigned family
+
             all_kws = cluster_defs[cid]["keywords"]
             unexplored_kws = [kw for kw in all_kws if kw not in bucket["_seen_keywords"]]
 

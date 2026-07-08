@@ -1,4 +1,3 @@
-"""Normalized component ASTs and ordered tree edit distance."""
 
 import ast
 from typing import Any, Optional
@@ -24,7 +23,6 @@ _STRUCTURAL_NODE_TYPES = {
 
 
 def _iter_functional_units(tree: ast.AST):
-    """Yield module functions and class methods without duplicating nested nodes."""
     for node in getattr(tree, "body", []):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             yield node
@@ -35,7 +33,6 @@ def _iter_functional_units(tree: ast.AST):
 
 
 def _ast_to_forest(node: ast.AST) -> list[AstTree]:
-    """Keep behavior-bearing AST nodes and promote children of lexical nodes."""
     children: list[AstTree] = []
     for _, value in ast.iter_fields(node):
         ast_children: list[ast.AST] = []
@@ -53,7 +50,6 @@ def _ast_to_forest(node: ast.AST) -> list[AstTree]:
 
 
 def _ast_to_tree(node: ast.AST) -> AstTree:
-    """Convert a functional unit into its normalized structural AST."""
     forest = _ast_to_forest(node)
     if len(forest) != 1:
         return {"label": type(node).__name__, "children": forest}
@@ -64,7 +60,6 @@ def component_ast_signature(
     source: str,
     component_keywords: list[str],
 ) -> Optional[AstTree]:
-    """Return a normalized AST for the functions most relevant to a component."""
     if not source:
         return None
     try:
@@ -106,14 +101,12 @@ def _is_tree(value: Any) -> bool:
 
 
 def ast_node_count(tree: Optional[AstTree]) -> int:
-    """Count nodes in a serialized AST tree."""
     if not _is_tree(tree):
         return 0
     return 1 + sum(ast_node_count(child) for child in tree["children"])
 
 
 def _postorder_index(tree: AstTree) -> tuple[list[str], list[int]]:
-    """Return one-based postorder labels and leftmost-leaf indices."""
     labels = [""]
     leftmost = [0]
 
@@ -129,7 +122,6 @@ def _postorder_index(tree: AstTree) -> tuple[list[str], list[int]]:
 
 
 def _keyroots(leftmost: list[int]) -> list[int]:
-    """Return the largest postorder index for each leftmost leaf."""
     last_for_leaf: dict[int, int] = {}
     for index in range(1, len(leftmost)):
         last_for_leaf[leftmost[index]] = index
@@ -140,7 +132,6 @@ def ast_tree_edit_distance(
     left: Optional[AstTree],
     right: Optional[AstTree],
 ) -> Optional[int]:
-    """Compute ordered TED with unit insertion, deletion, and relabel costs."""
     if not _is_tree(left) or not _is_tree(right):
         return None
     if left == right:
@@ -218,7 +209,6 @@ def ast_signature_similarity(
     left: Optional[AstTree],
     right: Optional[AstTree],
 ) -> Optional[float]:
-    """Return 1 - normalized ordered tree edit distance."""
     distance = ast_tree_edit_distance(left, right)
     if distance is None:
         return None

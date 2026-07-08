@@ -103,12 +103,6 @@ def _reward_from_result(result: dict) -> float:
 
 
 def classify_trial_result(result: Optional[dict], log_text: str = "") -> dict:
-    """Classify one Harbor trial into a task-level outcome.
-
-    Covers both Terminal-Bench 2 and Harbor SWE-bench runners. The categories
-    separate infrastructure failures from harness failures so component memory
-    does not learn from Docker or setup flakiness.
-    """
     if result is None:
         category = "missing_result"
         return {
@@ -120,7 +114,7 @@ def classify_trial_result(result: Optional[dict], log_text: str = "") -> dict:
         }
 
     reward = _reward_from_result(result)
-    # Harbor SWE-bench: n_episodes stored in agent_result.metadata
+
     _ar = result.get("agent_result") or {}
     n_episodes = (_ar.get("metadata") or {}).get("n_episodes")
     exception_info = result.get("exception_info") or {}
@@ -164,10 +158,10 @@ def classify_trial_result(result: Optional[dict], log_text: str = "") -> dict:
         category = "shell_quoting"
     elif "agenttimeouterror" in etype or "agenttimeout" in text:
         category = "agent_timeout"
-    # Harbor SWE-bench: turn-exhaustion (max_turns warning in trial.log)
+
     elif "artificially limited" in text and n_episodes is not None and n_episodes >= 30:
         category = "agent_timeout"
-    # Harbor SWE-bench: XML/JSON parser warnings from Terminus2 ICL format
+
     elif "parser warnings" in text and (
         "no valid json" in text or "extra text" in text
     ):
@@ -273,7 +267,6 @@ def collect_task_outcomes(
     task_rewards: Optional[dict] = None,
     expected_trials: Optional[int] = None,
 ) -> dict:
-    """Collect task-level trial outcomes from a Harbor job directory."""
     job_dir = Path(job_dir)
     task_trials: dict[str, list[dict]] = {}
     if not job_dir.exists():

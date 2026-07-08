@@ -1,14 +1,3 @@
-"""MetricsCollector — collects structured experiment metrics after each run.
-
-Reads from:
-  workspace/memory/episodes.jsonl
-  workspace/memory/component_evidence.json
-  workspace/memory/search_guidance.json
-  workspace/evo/iter_*/*/proposal_plan.json
-
-Writes (append) to:
-  workspace/memory/metrics.jsonl
-"""
 
 from __future__ import annotations
 import os
@@ -39,7 +28,7 @@ class MetricsCollector:
         self._guidance_path = self.output_dir / "search_guidance.json"
         self._episodes_path = self.output_dir / "episodes.jsonl"
 
-    # ── Data loaders ──────────────────────────────────────────
+
 
     def _load_episodes(self) -> list[dict]:
         if not self._episodes_path.exists():
@@ -71,7 +60,6 @@ class MetricsCollector:
             return {}
 
     def _load_proposal_plans(self) -> dict[str, dict]:
-        """Returns mapping episode_id -> plan dict."""
         plans: dict[str, dict] = {}
         for pf in sorted(self.evo_dir.glob("iter_*/*/proposal_plan.json")):
             try:
@@ -83,7 +71,6 @@ class MetricsCollector:
         return plans
 
     def _get_fewshot_baseline(self, logs_dir: Optional[Path] = None) -> Optional[float]:
-        """Find fewshot_all val accuracy from logs directory."""
         search_roots = []
         if logs_dir and logs_dir.exists():
             search_roots.append(logs_dir)
@@ -108,7 +95,6 @@ class MetricsCollector:
         filename: str,
         score_key: str,
     ) -> dict:
-        """Load a val/test frontier file and return its best entry plus pareto rows."""
         path = (logs_dir or LOGS_BASE) / filename
         if not path.exists():
             return {
@@ -171,27 +157,25 @@ class MetricsCollector:
     def _extract_test_system_from_launcher_log(
         self, log_file: Path, text: str
     ) -> Optional[str]:
-        """Extract the memory system name from a benchmark test launcher log."""
         match = re.search(r"--memory\s+(?:\S*/)?agents/([^/\s]+)\.py", text)
         if match:
             return match.group(1)
 
-        # Fallback for launcher names such as:
-        # 00_test_Symptom2Disease_mem_agent_i6_3_gpt-oss-120b.log
-        # 00_test_Symptom2Disease_mem_agent_i6_3_claude-3-5-sonnet.log
+
+
+
         name_match = re.search(r"_test_[^_]+_(mem_agent_i\d+_\d+)_", log_file.name)
         if name_match:
             return name_match.group(1)
         return None
 
     def _result_json_matches_launcher(self, result_path: Path, log_file: Path) -> bool:
-        """Return True when a result JSON appears to belong to this launcher run."""
         try:
             if not result_path.exists():
                 return False
-            # The benchmark writes result JSON immediately before the launcher log
-            # is closed. If the global results/ file was overwritten by a later
-            # ablation group, its mtime will drift away from this log.
+
+
+
             return abs(result_path.stat().st_mtime - log_file.stat().st_mtime) <= 300
         except Exception:
             return False
@@ -208,12 +192,6 @@ class MetricsCollector:
         }
 
     def _current_run_test_results_from_files(self, logs_dir: Path) -> list[dict]:
-        """Read current-run mem_agent test results from the global results dir.
-
-        benchmark.py stores test outputs under text_classification/results, not
-        under the per-run logs dir. Because mem_agent_i* names are reused across
-        ablation groups, stale global test.json files must be ignored.
-        """
         frontier_val = logs_dir / "frontier_val.json"
         freshness_cutoff = (
             frontier_val.stat().st_mtime - 60
@@ -257,12 +235,6 @@ class MetricsCollector:
         return candidates
 
     def _load_current_run_test_frontier(self, logs_dir: Optional[Path]) -> dict:
-        """Load test frontier restricted to candidates tested in this run.
-
-        The benchmark frontier file is global and may retain old systems from
-        previous runs. For ablation reporting we only want current-run generated
-        agents, so this method derives the candidate set from .launcher test logs.
-        """
         if not logs_dir or not logs_dir.exists():
             return self._empty_current_test_frontier()
 
@@ -354,11 +326,6 @@ class MetricsCollector:
         }
 
     def _proposer_tokens(self) -> dict:
-        """Aggregate proposer LLM usage from iter_*/proposer_usage.jsonl.
-
-        This is the clean proposer-only comparison token metric. It excludes
-        classifier/evaluation tokens and excludes byte/char proxy costs.
-        """
         sources = {
             "provider": {"prompt": 0, "completion": 0, "total": 0, "calls": 0},
             "estimated": {"prompt": 0, "completion": 0, "total": 0, "calls": 0},
@@ -435,11 +402,6 @@ class MetricsCollector:
         }
 
     def _harness_execution_tokens(self, logs_dir: Optional[Path]) -> dict:
-        """Aggregate classifier/evaluation LLM usage from val.json/test.json.
-
-        Provider tokens are real API usage. Cached tokens are reported
-        separately because they do not represent new provider calls in this run.
-        """
         totals = {
             "provider": {"prompt": 0, "completion": 0, "total": 0, "calls": 0},
             "estimated": {"prompt": 0, "completion": 0, "total": 0, "calls": 0},
@@ -468,8 +430,8 @@ class MetricsCollector:
                         totals[source]["total"] += total
                         totals[source]["calls"] += calls
                 else:
-                    # Backward-compatible fallback: old llm_* fields lacked
-                    # source attribution, so they are estimates, not provider API usage.
+
+
                     prompt = int(data.get("llm_input_tokens") or 0)
                     completion = int(data.get("llm_output_tokens") or 0)
                     total = int(data.get("llm_total_tokens") or prompt + completion)
@@ -485,7 +447,7 @@ class MetricsCollector:
             for result_file in list(root.rglob("val.json")) + list(root.rglob("test.json")):
                 parts = result_file.parts
                 if len(parts) >= 2:
-                    # logs/<run>/<dataset>/<memory>/<model_short>/<split>.json
+
                     models.add(parts[-2])
 
         return {
@@ -715,7 +677,7 @@ class MetricsCollector:
         except Exception:
             return {}
 
-    # ── Metric computations ───────────────────────────────────
+
 
     def _build_score_curve(self, episodes: list[dict]) -> dict:
         from collections import defaultdict
@@ -781,7 +743,7 @@ class MetricsCollector:
 
         scores = [float(ep.get("score", 0)) for ep in episodes]
 
-        # evaluations_to_target
+
         evals_to_target: Optional[int] = _NULL
         if baseline is not None:
             for i, s in enumerate(scores):
@@ -789,13 +751,13 @@ class MetricsCollector:
                     evals_to_target = i + 1
                     break
 
-        # best_score_at_budget
+
         best_at_budget: dict[str, Optional[float]] = {}
         for budget in [5, 10, 15, 20]:
             subset = scores[:budget]
             best_at_budget[str(budget)] = round(max(subset), 1) if subset else _NULL
 
-        # token_cost_to_best
+
         best_score = max(scores) if scores else 0.0
         best_idx = next((i for i, s in enumerate(scores) if s == best_score), None)
         token_cost_to_best: Optional[int] = _NULL
@@ -804,7 +766,7 @@ class MetricsCollector:
                 int(ep.get("token_cost", 0)) for ep in episodes[: best_idx + 1]
             )
 
-        # area_under_curve (best-so-far trapz, normalized to [0,1])
+
         auc: Optional[float] = _NULL
         if len(scores) >= 2:
             bsf: list[float] = []
@@ -845,8 +807,8 @@ class MetricsCollector:
             if d:
                 avoid_directions.add(d)
 
-        # repeated_failure_rate: among regression episodes, how many had
-        # change_family already in avoid list
+
+
         regression_eps = [
             ep for ep in episodes if ep.get("status") == "regression"
         ]
@@ -866,7 +828,7 @@ class MetricsCollector:
             else _NULL
         )
 
-        # promising_direction_reuse_rate: promising families reused after first seen
+
         promising_families: list[dict] = []
         for comp_data in evidence.get("components", {}).values():
             for fam in comp_data.get("change_families", []):
@@ -884,7 +846,7 @@ class MetricsCollector:
             else _NULL
         )
 
-        # evidence_hit_rate: best candidate's change_family in high_priority
+
         best_eps = max(episodes, key=lambda e: float(e.get("score", 0)), default=None)
         evidence_hit_rate: Optional[float] = _NULL
         if best_eps:
@@ -922,7 +884,7 @@ class MetricsCollector:
             single_ratio = round(single_count / n, 3)
             ambiguous_ratio = round(ambiguous_count / n, 3)
 
-        # proposal_plan_compliance_rate
+
         plan_compliance: Optional[float] = _NULL
         valid_plan_rate: Optional[float] = _NULL
         if plans:
@@ -979,7 +941,7 @@ class MetricsCollector:
             "score_variance": variance,
         }
 
-    # ── Public API ────────────────────────────────────────────
+
 
     def collect(
         self,
@@ -987,7 +949,6 @@ class MetricsCollector:
         logs_dir: Optional[Path] = None,
         config_override: Optional[dict] = None,
     ) -> dict:
-        """Collect all metrics for this session. Returns the metrics dict."""
         episodes = self._load_episodes()
         evidence = self._load_component_evidence()
         guidance = self._load_search_guidance()
@@ -1006,7 +967,7 @@ class MetricsCollector:
             episodes, proposer_tokens, harness_execution_tokens
         )
 
-        # Load memory config for metadata
+
         mem_cfg: dict = {}
         if config_override:
             mem_cfg = config_override
@@ -1078,7 +1039,6 @@ class MetricsCollector:
             f.write(json.dumps(metrics, ensure_ascii=False) + "\n")
 
     def load_all(self) -> list[dict]:
-        """Load all saved metrics records."""
         if not self.metrics_path.exists():
             return []
         records = []
@@ -1091,7 +1051,7 @@ class MetricsCollector:
                     continue
         return records
 
-    # ── Report generation ────────────────────────────────────
+
 
     def generate_comparison_report(self, session_ids: list[str]) -> str:
         all_records = self.load_all()
@@ -1335,7 +1295,7 @@ class MetricsCollector:
             "Token Cost to Best (proxy)",
             lambda r: _fmt(_g(r, "search_efficiency", "token_cost_to_best")),
         ))
-        rows.append(("", []))  # separator
+        rows.append(("", []))
         rows.append(_row(
             "Repeated Failure Rate",
             lambda r: _pct(_g(r, "memory_effectiveness", "repeated_failure_rate")),
@@ -1383,7 +1343,7 @@ class MetricsCollector:
             lambda r: _fmt(_g(r, "stability", "score_variance")),
         ))
 
-        # Build markdown table
+
         col_w = 22
         hdr_w = 26
         n_cols = len(ordered_sids)
@@ -1493,7 +1453,7 @@ if __name__ == "__main__":
     else:
         print("No metrics yet. Run evolution first to populate workspace/memory/")
         if "--test" in sys.argv:
-            # Inject a synthetic record for format testing
+
             synthetic = {
                 "session_id": "synthetic_test",
                 "timestamp": "2026-04-29T00:00:00",
@@ -1527,10 +1487,10 @@ if __name__ == "__main__":
             print("\n--- Synthetic record format test ---")
             print(json.dumps(synthetic, indent=2, ensure_ascii=False))
             print("\n--- Comparison report (single session) ---")
-            # Temporarily write and read back
+
             collector.save(synthetic)
             print(collector.generate_comparison_report(["synthetic_test"]))
-            # Clean up synthetic record
+
             lines = collector.metrics_path.read_text(encoding="utf-8").splitlines()
             remaining = [l for l in lines if "synthetic_test" not in l]
             collector.metrics_path.write_text("\n".join(remaining) + ("\n" if remaining else ""), encoding="utf-8")

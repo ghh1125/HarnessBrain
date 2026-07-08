@@ -1,9 +1,3 @@
-"""Dynamic utility overlay for component-memory evidence.
-
-Historical evidence files answer what happened before. This overlay answers
-whether a memory item is currently useful enough to guide the next prompt.
-It never deletes evidence; it only changes current_status/utility metadata.
-"""
 
 from __future__ import annotations
 import os
@@ -39,14 +33,13 @@ def avoid_memory_id(component: str | None, family_id: str | None) -> str:
 
 
 class MemoryUtilityTracker:
-    """Track current usability for memory items without deleting history."""
 
     def __init__(self, output_dir: Path | None = None):
         self.output_dir = output_dir or COMPONENT_MEMORY_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.utility_path = self.output_dir / "memory_utility.json"
 
-    # ── Persistence ───────────────────────────────────────────
+
 
     def _blank(self) -> dict[str, Any]:
         return {
@@ -94,7 +87,7 @@ class MemoryUtilityTracker:
             "last_used_iter": None,
             "last_success_iter": None,
             "usable": True,
-            # Strategy-specific aliases used by reports/prompts.
+
             "reuse_count": 0,
             "reuse_success": 0,
             "reuse_failure": 0,
@@ -135,7 +128,7 @@ class MemoryUtilityTracker:
         item["usable"] = False
         return item
 
-    # ── Registration ──────────────────────────────────────────
+
 
     def register_memory(
         self,
@@ -223,7 +216,7 @@ class MemoryUtilityTracker:
                     },
                 )
 
-    # ── Update ────────────────────────────────────────────────
+
 
     def _normalize_item(self, item: dict[str, Any]) -> dict[str, Any]:
         item.setdefault("current_status", "usable")
@@ -305,7 +298,6 @@ class MemoryUtilityTracker:
         score_delta: float,
         iteration: int,
     ) -> None:
-        """Update an avoid memory after an explicit avoid_retest candidate."""
         states = self.load_states()
         items = states.setdefault("memory_items", {})
         item = items.get(memory_id)
@@ -350,7 +342,7 @@ class MemoryUtilityTracker:
         with (self.output_dir / "evolution_log.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
-    # ── Query/enrichment ──────────────────────────────────────
+
 
     def get_item(self, memory_id: str) -> dict[str, Any] | None:
         item = self._load().get("memory_items", {}).get(memory_id)
@@ -439,8 +431,8 @@ class MemoryUtilityTracker:
         result["historical_positive_anchors"] = anchors
         result["positive_anchors"] = [a for a in anchors if bool(a.get("usable", True))]
 
-        # Hypothesis tests can still use historical strategies, because they are
-        # not direct reuse; they test why a memory stopped working.
+
+
         if not guidance.get("hypothesis_test_targets") and stale:
             result["hypothesis_test_targets"] = [
                 {

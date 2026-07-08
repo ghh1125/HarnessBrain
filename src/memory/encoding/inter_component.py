@@ -19,7 +19,7 @@ class InterComponentEvidence:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.evidence_path = self.output_dir / "inter_component_evidence.json"
 
-    # ── Persistence ───────────────────────────────────────────
+
 
     def _load(self) -> dict:
         if self.evidence_path.exists():
@@ -64,7 +64,7 @@ class InterComponentEvidence:
     def _recompute_stats(self, data: dict) -> None:
         data["stats"] = self._compute_stats(self._all_patterns(data))
 
-    # ── Helpers ───────────────────────────────────────────────
+
 
     def _pattern_key(self, components: list) -> frozenset:
         return frozenset(components)
@@ -93,7 +93,7 @@ class InterComponentEvidence:
             f"avg_delta={avg_delta:.1f}%, neutral trend"
         )
 
-    # ── Core API ─────────────────────────────────────────────
+
 
     def update(self, episode: dict, components_changed: list) -> None:
         if len(components_changed) < 2:
@@ -104,7 +104,7 @@ class InterComponentEvidence:
         key = self._pattern_key(components_changed)
         data = self._load()
 
-        # Find matching pattern
+
         for pat in data["co_change_patterns"]:
             if frozenset(pat["components"]) == key:
                 if episode_id not in pat["episodes"]:
@@ -123,7 +123,7 @@ class InterComponentEvidence:
                 self._save(data)
                 return
 
-        # Create new pattern
+
         n = len(data["co_change_patterns"]) + 1
         new_pat = {
             "pattern_id": f"co_{n:03d}",
@@ -207,7 +207,7 @@ class InterComponentEvidence:
         )
         ambiguous_ratio = round(n_ambiguous / max(total_multi, 1), 2)
 
-        # Count pair frequencies
+
         pair_counts: dict = {}
         pair_deltas: dict = {}
         for pat in all_patterns:
@@ -236,7 +236,7 @@ class InterComponentEvidence:
     def get_guidance(self) -> dict:
         data = self._load()
 
-        # Build warning for frequent negative patterns still in co_change_patterns
+
         warnings = []
         for pat in data.get("co_change_patterns", []):
             if pat["count"] >= 3 and pat["trend"] == "negative":
@@ -266,13 +266,12 @@ class InterComponentEvidence:
         return self._compute_stats(all_pats)
 
     def build_from_episodes(self) -> None:
-        """Rebuild inter_component_evidence.json from all episodes in episodes.jsonl."""
         from memory.encoding.episode_recorder import EpisodeRecorder
         from memory.encoding.component_evidence import identify_components
 
         episodes = EpisodeRecorder(self.output_dir).get_all_episodes()
 
-        # Reset
+
         data = self._blank()
         self._save(data)
 
